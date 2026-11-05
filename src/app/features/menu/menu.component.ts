@@ -108,7 +108,7 @@ import { FavoritosService } from '../../core/services/favoritos.service';
       </div>
 
       <nav class="mt-6 flex flex-wrap gap-2" aria-label="Categorías del menú">
-        @for (categoria of productos.categorias; track categoria.id) {
+        @for (categoria of productos.categorias(); track categoria.id) {
           <button
             type="button"
             class="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition"

@@ -23,8 +23,9 @@ export class ProductosService {
 
   private readonly productos = signal<Producto[]>(PRODUCTOS);
   private readonly filtros = signal<FiltrosMenu>(FILTROS_INICIALES);
+  private readonly categoriasSignal = signal<Categoria[]>(CATEGORIAS);
 
-  readonly categorias: Categoria[] = CATEGORIAS;
+  readonly categorias = this.categoriasSignal.asReadonly();
   readonly cargando = signal(false);
   readonly error = signal('');
 
@@ -46,28 +47,35 @@ export class ProductosService {
         firstValueFrom(this.api.get<any[]>('/productos/categorias'))
       ]);
       if (productos?.length) {
-        const normalizados = productos.map((p: any) => ({
-          id: p.id,
-          nombre: p.nombre,
-          descripcion: p.descripcion,
-          precio: p.precio,
-          categoria: p.categoria?.slug || p.categoriaId || p.categoria,
-          imagenUrl: p.imagenUrl,
-          etiquetas: Array.isArray(p.etiquetas) ? p.etiquetas : JSON.parse(p.etiquetas || '[]'),
-          ingredientes: p.ingredientes || [],
-          tamanos: Array.isArray(p.tamanos) ? p.tamanos : JSON.parse(p.tamanos || '[]'),
-          extras: Array.isArray(p.extras) ? p.extras : JSON.parse(p.extras || '[]'),
-          salsas: Array.isArray(p.salsas) ? p.salsas : JSON.parse(p.salsas || '[]'),
-          retirables: Array.isArray(p.retirables) ? p.retirables : JSON.parse(p.retirables || '[]'),
-          tiempoPreparacionMin: p.tiempoPreparacionMin || 15,
-        })) as Producto[];
+        const normalizados = productos.map((p: any) => {
+          let cat = p.categoria?.slug || p.categoriaId || p.categoria;
+          // Si viene como objeto categoria con slug
+          if (p.categoria && typeof p.categoria === 'object') {
+            cat = p.categoria.slug || p.categoria.id;
+          }
+          return {
+            id: p.id,
+            nombre: p.nombre,
+            descripcion: p.descripcion,
+            precio: p.precio,
+            categoria: cat,
+            imagenUrl: p.imagenUrl,
+            etiquetas: Array.isArray(p.etiquetas) ? p.etiquetas : JSON.parse(p.etiquetas || '[]'),
+            ingredientes: p.ingredientes || [],
+            tamanos: Array.isArray(p.tamanos) ? p.tamanos : JSON.parse(p.tamanos || '[]'),
+            extras: Array.isArray(p.extras) ? p.extras : JSON.parse(p.extras || '[]'),
+            salsas: Array.isArray(p.salsas) ? p.salsas : JSON.parse(p.salsas || '[]'),
+            retirables: Array.isArray(p.retirables) ? p.retirables : JSON.parse(p.retirables || '[]'),
+            tiempoPreparacionMin: p.tiempoPreparacionMin || 15,
+          };
+        }) as Producto[];
         this.productos.set(normalizados);
       }
       if (categorias?.length) {
-        (this as any).categorias = categorias.map((c: any) => ({
+        this.categoriasSignal.set(categorias.map((c: any) => ({
           id: c.slug || c.id,
           nombre: c.nombre
-        }));
+        })));
       }
     } catch (err) {
       console.error('Error al cargar desde API, usando datos locales', err);
@@ -85,7 +93,7 @@ export class ProductosService {
     return this.productos().filter((producto) => {
       const coincideCategoria =
         categoria === 'populares'
-          ? producto.etiquetas.includes('mas-vendido')
+          ? true
           : producto.categoria === categoria;
 
       const coincideBusqueda =
