@@ -5,6 +5,7 @@ import {
 } from '@angular/core';
 import { provideRouter, withInMemoryScrolling } from '@angular/router';
 import { provideServiceWorker } from '@angular/service-worker';
+import { provideHttpClient, withFetch } from '@angular/common/http';
 import { routes } from './app.routes';
 
 export const appConfig: ApplicationConfig = {
@@ -14,6 +15,7 @@ export const appConfig: ApplicationConfig = {
       routes,
       withInMemoryScrolling({ scrollPositionRestoration: 'top', anchorScrolling: 'enabled' }),
     ),
+    provideHttpClient(withFetch()),
     provideServiceWorker('ngsw-worker.js', {
       enabled: !isDevMode(),
       registrationStrategy: 'registerWhenStable:30000',

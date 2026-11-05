@@ -1,8 +1,9 @@
-import { Component, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import {
   LucideFlame,
+  LucideHeart,
   LucideLeaf,
   LucideSearch,
   LucideSlidersHorizontal,
@@ -16,12 +17,8 @@ import { EtiquetaProducto } from '../../models/producto.model';
 import { CarritoPanelComponent } from '../../shared/components/carrito-panel/carrito-panel.component';
 import { ProductoCardComponent } from '../../shared/components/producto-card/producto-card.component';
 import { PrecioCopPipe } from '../../shared/pipes/precio-cop.pipe';
-
-const OPCIONES_ETIQUETA: { id: EtiquetaProducto; titulo: string; icon?: unknown }[] = [
-  { id: 'vegetariano', titulo: 'Vegetariano' },
-  { id: 'sin-gluten', titulo: 'Sin gluten' },
-  { id: 'mas-vendido', titulo: 'Más vendidos' },
-];
+import { ProductoDetalleComponent } from '../../shared/components/producto-detalle/producto-detalle.component';
+import { FavoritosService } from '../../core/services/favoritos.service';
 
 @Component({
   selector: 'app-menu',
@@ -31,11 +28,13 @@ const OPCIONES_ETIQUETA: { id: EtiquetaProducto; titulo: string; icon?: unknown 
     ProductoCardComponent,
     CarritoPanelComponent,
     PrecioCopPipe,
+    ProductoDetalleComponent,
     LucideSearch,
     LucideSlidersHorizontal,
     LucideLeaf,
     LucideWheatOff,
     LucideFlame,
+    LucideHeart,
   ],
   template: `
     <section class="mx-auto max-w-[1760px] px-5 py-10 md:px-10 xl:px-20">
@@ -45,7 +44,7 @@ const OPCIONES_ETIQUETA: { id: EtiquetaProducto; titulo: string; icon?: unknown 
             Menú digital
           </h1>
           <p class="mt-2 text-sm text-brasa-muted sm:text-base">
-            Busca, filtra y arma tu pedido para enviarlo directo a cocina.
+            Busca, filtra y personaliza tu pedido para enviarlo directo a cocina.
           </p>
         </div>
       </div>
@@ -92,9 +91,18 @@ const OPCIONES_ETIQUETA: { id: EtiquetaProducto; titulo: string; icon?: unknown 
               {{ etiqueta.titulo }}
             </button>
           }
+          <button
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition"
+            [class]="soloFavoritos() ? 'border-brasa-orange bg-brasa-orange/10 text-brasa-black' : 'border-brasa-border text-brasa-muted hover:border-brasa-muted hover:text-brasa-black'"
+            (click)="soloFavoritos.set(!soloFavoritos())"
+          >
+            <svg lucideHeart [size]="15"></svg>
+            Favoritos
+          </button>
           <span class="flex items-center gap-1 text-xs text-brasa-muted sm:text-sm">
             <svg lucideSlidersHorizontal [size]="16"></svg>
-            Filtros activos: {{ productos.estadoFiltros().etiquetas.length }}
+            Filtros activos: {{ productos.estadoFiltros().etiquetas.length + (soloFavoritos() ? 1 : 0) }}
           </span>
         </div>
       </div>
@@ -118,35 +126,42 @@ const OPCIONES_ETIQUETA: { id: EtiquetaProducto; titulo: string; icon?: unknown 
 
       <div class="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-12">
         <div class="lg:col-span-8 xl:col-span-8">
-          <h2 class="font-heading text-xl font-semibold text-brasa-black">
-            {{ tituloCategoria() }}
-          </h2>
-          <p class="mt-1 text-sm text-brasa-muted">
-            Mostrando {{ productos.productosFiltrados().length }} productos
-          </p>
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="font-heading text-xl font-semibold text-brasa-black">
+                {{ tituloCategoria() }}
+              </h2>
+              <p class="mt-1 text-sm text-brasa-muted">
+                Mostrando {{ productosMostrados().length }} productos
+              </p>
+            </div>
+            @if (productos.cargando()) {
+              <span class="text-xs text-brasa-muted">Actualizando menú...</span>
+            }
+          </div>
 
-          @if (productos.productosFiltrados().length === 0) {
+          @if (productosMostrados().length === 0) {
             <div class="mt-6 flex flex-col items-center gap-3 rounded-2xl border border-dashed border-brasa-border px-6 py-16 text-center">
               <p class="font-heading text-base font-semibold text-brasa-black">
                 No encontramos productos con esos filtros
               </p>
               <p class="text-sm text-brasa-muted">
-                Ajusta la búsqueda o las etiquetas para ver más resultados.
+                Ajusta la búsqueda, las etiquetas o quita el filtro de favoritos.
               </p>
               <button
                 type="button"
                 class="mt-2 rounded-xl border border-brasa-border px-5 py-2.5 text-sm font-semibold text-brasa-black transition hover:bg-brasa-gray-light"
-                (click)="productos.limpiarFiltros()"
+                (click)="productos.limpiarFiltros(); soloFavoritos.set(false)"
               >
                 Limpiar filtros
               </button>
             </div>
           } @else {
             <div class="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-              @for (producto of productos.productosFiltrados(); track producto.id) {
+              @for (producto of productosMostrados(); track producto.id) {
                 <app-producto-card
                   [producto]="producto"
-                  (agregar)="agregarAlCarrito(producto)"
+                  (abrirDetalle)="abrirDetalle(producto)"
                 ></app-producto-card>
               }
             </div>
@@ -179,12 +194,29 @@ const OPCIONES_ETIQUETA: { id: EtiquetaProducto; titulo: string; icon?: unknown 
         </div>
       </div>
     }
+
+    <app-producto-detalle
+      [producto]="productoSeleccionado()"
+      [abierto]="detalleAbierto()"
+      (cerrar)="cerrarDetalle()"
+    ></app-producto-detalle>
   `,
 })
 export class MenuComponent {
   protected readonly productos = inject(ProductosService);
   protected readonly carrito = inject(CarritoService);
   protected readonly notificaciones = inject(NotificacionesService);
+  protected readonly favoritos = inject(FavoritosService);
+
+  protected readonly productoSeleccionado = signal<Producto | null>(null);
+  protected readonly detalleAbierto = signal(false);
+  protected readonly soloFavoritos = signal(false);
+
+  protected readonly productosMostrados = computed(() => {
+    const lista = this.productos.productosFiltrados();
+    if (!this.soloFavoritos()) return lista;
+    return lista.filter((p) => this.favoritos.esFavorito(p.id));
+  });
 
   protected readonly opcionesEtiqueta: { id: EtiquetaProducto; titulo: string; icon?: unknown }[] = [
     { id: 'vegetariano', titulo: 'Vegetariano' },
@@ -208,8 +240,12 @@ export class MenuComponent {
     return this.productos.estadoFiltros().etiquetas.includes(id);
   }
 
-  protected agregarAlCarrito(producto: Producto): void {
-    this.carrito.agregarProducto(producto);
-    this.notificaciones.mostrar(`Se agregó ${producto.nombre} al carrito`);
+  protected abrirDetalle(producto: Producto): void {
+    this.productoSeleccionado.set(producto);
+    this.detalleAbierto.set(true);
+  }
+
+  protected cerrarDetalle(): void {
+    this.detalleAbierto.set(false);
   }
 }

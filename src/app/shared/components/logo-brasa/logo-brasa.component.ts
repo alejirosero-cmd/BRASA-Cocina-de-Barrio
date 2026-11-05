@@ -8,7 +8,7 @@ import { RouterLink } from '@angular/router';
     <a
       routerLink="/"
       class="group inline-flex items-center gap-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brasa-orange rounded-lg"
-      [attr.aria-label]="'BRASA - Cocina de Barrio, ir al inicio'"
+      [attr.aria-label]="'BRASA, ir al inicio'"
     >
       <span
         class="flex h-10 w-10 items-center justify-center rounded-xl bg-brasa-orange text-white shadow-soft transition group-hover:scale-105"
@@ -22,7 +22,7 @@ import { RouterLink } from '@angular/router';
         <span class="font-heading text-xl font-bold tracking-tight text-brasa-black">BRASA</span>
         @if (mostrarEslogan()) {
           <span class="text-[11px] font-medium uppercase tracking-[0.18em] text-brasa-muted">
-            Cocina de Barrio
+            Cocina Artesanal
           </span>
         }
       </span>

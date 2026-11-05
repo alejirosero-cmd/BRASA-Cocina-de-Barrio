@@ -18,3 +18,13 @@ export interface ResumenPedido {
   descuento: number;
   total: number;
 }
+
+export interface CalificacionPedido {
+  id: string;
+  pedidoId: string;
+  pedidoNumero: string;
+  estrellas: number;
+  comentario: string;
+  calificacionesPorItem?: { productoId: string; estrellas: number }[];
+  fecha: string;
+}

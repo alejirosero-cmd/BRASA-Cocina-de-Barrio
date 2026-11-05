@@ -1,7 +1,11 @@
-import { Injectable, computed, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
 import { ItemCarrito } from '../../models/carrito.model';
 import { EstadoPedido, ResumenPedido } from '../../models/pedido.model';
 import { MesaConfig } from '../../models/mesa.model';
+import { ApiService } from './api.service';
+import { environment } from '../../../environments/environment';
+import { firstValueFrom } from 'rxjs';
+import { HistorialPedidosService } from './historial-pedidos.service';
 
 export interface Pedido {
   id: string;
@@ -24,34 +28,67 @@ export interface NuevoPedido {
 
 @Injectable({ providedIn: 'root' })
 export class PedidosService {
+  private readonly api = inject(ApiService);
+  private readonly historial = inject(HistorialPedidosService);
   private readonly pedidoActual = signal<Pedido | null>(null);
 
-  /**
-   * Indica si hay conexión real con el servidor / cocina. Mientras sea `false`,
-   * el pedido se simula localmente (demostración).
-   */
-  readonly integracionActiva = signal(false);
-
+  readonly integracionActiva = signal(environment.integracionActiva);
   readonly pedido = this.pedidoActual.asReadonly();
   readonly hayPedidoActivo = computed(() => this.pedidoActual() !== null);
 
-  crearPedido(nuevo: NuevoPedido): Pedido {
-    const tiempoEstimadoMin =
-      10 + nuevo.items.reduce((total, item) => total + item.cantidad * 4, 0);
+  async crearPedido(nuevo: NuevoPedido): Promise<Pedido> {
+    if (this.integracionActiva()) {
+      try {
+        const body = {
+          items: nuevo.items.map((item) => ({
+            productoId: item.productoId,
+            nombre: item.nombre,
+            imagenUrl: item.imagenUrl,
+            precioBase: item.precioBase,
+            precioUnitario: item.precioUnitario,
+            cantidad: item.cantidad,
+            personalizacion: item.personalizacion
+          })),
+          resumen: nuevo.resumen,
+          mesa: nuevo.mesa,
+          notasCocina: nuevo.notasCocina,
+          tipoPedido: nuevo.mesa?.tipo || 'mesa'
+        };
 
+        const respuesta = await firstValueFrom(this.api.post<any>('/pedidos', body));
+        const pedido: Pedido = {
+          id: respuesta.id,
+          numero: respuesta.numero,
+          items: respuesta.items,
+          resumen: respuesta.resumen || nuevo.resumen,
+          mesa: respuesta.mesa || nuevo.mesa,
+          notasCocina: respuesta.notasCocina,
+          creadoEn: respuesta.creadoEn,
+          tiempoEstimadoMin: respuesta.tiempoEstimadoMin,
+          estado: respuesta.estado
+        };
+        this.pedidoActual.set(pedido);
+        this.historial.agregar(pedido);
+        return pedido;
+      } catch (error) {
+        console.error('Error al crear pedido en API, usando modo local', error);
+      }
+    }
+
+    const tiempoEstimadoMin = 10 + nuevo.items.reduce((total, item) => total + item.cantidad * 4, 0);
     const pedido: Pedido = {
-      id: this.generarId(),
-      numero: this.generarNumero(),
+      id: `PED-${Date.now().toString(36).toUpperCase()}`,
+      numero: `#${Math.floor(1000 + Math.random() * 9000)}`,
       items: nuevo.items,
       resumen: nuevo.resumen,
       mesa: nuevo.mesa,
       notasCocina: nuevo.notasCocina,
       creadoEn: new Date().toISOString(),
       tiempoEstimadoMin,
-      estado: 'recibido',
+      estado: 'recibido'
     };
-
     this.pedidoActual.set(pedido);
+    this.historial.agregar(pedido);
     return pedido;
   }
 
@@ -61,14 +98,5 @@ export class PedidosService {
 
   limpiar(): void {
     this.pedidoActual.set(null);
-  }
-
-  private generarId(): string {
-    return `PED-${Date.now().toString(36).toUpperCase()}`;
-  }
-
-  private generarNumero(): string {
-    const aleatorio = Math.floor(100 + Math.random() * 900);
-    return `#${aleatorio}`;
   }
 }

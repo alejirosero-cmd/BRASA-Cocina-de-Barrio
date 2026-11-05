@@ -4,6 +4,7 @@ import { LogoBrasaComponent } from '../logo-brasa/logo-brasa.component';
 import { MesaService } from '../../../core/services/mesa.service';
 import { CarritoService } from '../../../core/services/carrito.service';
 import { UiService } from '../../../core/services/ui.service';
+import { PedidosService } from '../../../core/services/pedidos.service';
 
 @Component({
   selector: 'app-site-header',
@@ -27,6 +28,9 @@ import { UiService } from '../../../core/services/ui.service';
             class="rounded-lg px-4 py-2 text-sm font-medium text-brasa-muted transition hover:text-brasa-black"
           >
             Seguimiento
+            @if (pedidos.hayPedidoActivo()) {
+              <span class="ml-1.5 inline-flex h-2 w-2 rounded-full bg-brasa-orange"></span>
+            }
           </a>
         </nav>
 
@@ -78,4 +82,5 @@ export class SiteHeaderComponent {
   protected readonly mesa = inject(MesaService);
   protected readonly carrito = inject(CarritoService);
   protected readonly ui = inject(UiService);
+  protected readonly pedidos = inject(PedidosService);
 }
