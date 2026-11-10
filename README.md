@@ -61,6 +61,12 @@ Usuarios creados por el seed (las contraseñas son las que pusiste en `.env`):
 | Mesero | mesero@brasa.local (solo fuera de producción) | `/mesero` |
 | Cliente | se registra en `/registro` (opcional: se puede pedir sin cuenta) | `/menu` |
 
+¿Olvidaste una contraseña? Cámbiala desde la terminal, dentro de `server/`:
+
+```bash
+npm run usuario:clave -- admin@brasa.local "UnaClaveQueRecuerdes"
+```
+
 Los códigos QR de las mesas se ven e imprimen en **Admin → Mesas y QR**. Cada QR abre
 `http://localhost:4200/m/<CODIGO>`; el código también se puede escribir a mano en la página de inicio.
 
