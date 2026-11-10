@@ -6,7 +6,7 @@ import { PanelPersonalService } from '../../core/services/panel-personal.service
 import { EstadoPedido, Pedido } from '../../models/pedido.model';
 import { TarjetaPedidoComponent } from '../../shared/components/tarjeta-pedido/tarjeta-pedido.component';
 
-/** Panel de cocina: pedidos reales de todas las mesas, en tiempo real (corrige E-03/E-04). */
+/** Panel de cocina: pedidos de todas las mesas, actualizados en tiempo real. */
 @Component({
   selector: 'app-cocina',
   imports: [LucideChefHat, TarjetaPedidoComponent],

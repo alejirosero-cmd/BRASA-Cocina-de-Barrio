@@ -5,7 +5,7 @@ import { ApiService } from './api.service';
 
 const STORAGE_KEY = 'brasa.mesa';
 
-/** Sin mesa preseleccionada: antes la app asumía la mesa 4 (hallazgo E-05). */
+/** Sin mesa preseleccionada: el cliente debe escanear el QR o elegir "Para llevar". */
 const ESTADO_INICIAL: UbicacionCliente = { tipo: 'mesa', numero: null, codigo: null };
 
 @Injectable({ providedIn: 'root' })
