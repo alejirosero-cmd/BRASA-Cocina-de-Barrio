@@ -2,7 +2,6 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { Categoria, EtiquetaProducto, Producto } from '../../models/producto.model';
 import { CATEGORIAS, PRODUCTOS } from '../data/productos.data';
 import { ApiService } from './api.service';
-import { environment } from '../../../environments/environment';
 import { firstValueFrom } from 'rxjs';
 
 export interface FiltrosMenu {
@@ -32,10 +31,9 @@ export class ProductosService {
   readonly lista = this.productos.asReadonly();
   readonly estadoFiltros = this.filtros.asReadonly();
 
+  /** El menú siempre viene del servidor; el catálogo local solo se muestra si no hay conexión. */
   constructor() {
-    if (environment.integracionActiva) {
-      this.cargarDesdeApi();
-    }
+    this.cargarDesdeApi();
   }
 
   async cargarDesdeApi(): Promise<void> {
@@ -72,14 +70,15 @@ export class ProductosService {
         this.productos.set(normalizados);
       }
       if (categorias?.length) {
-        this.categoriasSignal.set(categorias.map((c: any) => ({
-          id: c.slug || c.id,
-          nombre: c.nombre
-        })));
+        // "Populares" es el filtro que muestra todo; no es una categoría del servidor.
+        this.categoriasSignal.set([
+          { id: 'populares', nombre: 'Populares' },
+          ...categorias.map((c: any) => ({ id: c.slug || c.id, nombre: c.nombre })),
+        ]);
       }
     } catch (err) {
       console.error('Error al cargar desde API, usando datos locales', err);
-      this.error.set('No se pudo conectar con la API');
+      this.error.set('Sin conexión con el restaurante: se muestra el menú guardado. Los precios finales los confirma el servidor al enviar el pedido.');
     } finally {
       this.cargando.set(false);
     }

@@ -1,7 +1,10 @@
-import { Injectable, computed, effect, signal } from '@angular/core';
+import { Injectable, computed, effect, inject, signal } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
 import { ItemCarrito, PersonalizacionItem } from '../../models/carrito.model';
 import { Producto } from '../../models/producto.model';
 import { CONFIGURACION } from '../config/configuracion';
+import { Cotizacion } from '../../models/pedido.model';
+import { ApiService, mensajeError } from './api.service';
 
 const STORAGE_KEY = 'brasa.carrito';
 
@@ -43,6 +46,11 @@ function firmaPersonalizacion(personalizacion: PersonalizacionItem): string {
 
 @Injectable({ providedIn: 'root' })
 export class CarritoService {
+  private readonly api = inject(ApiService);
+  /** Última cotización del servidor; mientras llega se muestra la estimación local. */
+  private readonly cotizacionServidor = signal<Cotizacion | null>(null);
+  readonly cotizacion = this.cotizacionServidor.asReadonly();
+  readonly errorCotizacion = signal('');
   private readonly items = signal<ItemCarrito[]>(this.cargar());
   private readonly descuentoPorcentaje = signal(0);
   private readonly propinaPorcentaje = signal(CONFIGURACION.propinaSugerida);
@@ -71,9 +79,43 @@ export class CarritoService {
 
   readonly total = computed(() => this.baseGravable() + this.impuestos() + this.propina());
 
+  /** Totales a mostrar: los del servidor si ya llegaron, si no la estimación local. */
+  readonly resumen = computed(() =>
+    this.cotizacionServidor() ?? {
+      subtotal: this.subtotal(),
+      descuento: this.descuento(),
+      impuestos: this.impuestos(),
+      propina: this.propina(),
+      total: this.total(),
+    },
+  );
+
   constructor() {
     effect(() => {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.items()));
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.items()));
+      } catch {
+        /* almacenamiento no disponible */
+      }
+    });
+
+    // Cada cambio del carrito pide al servidor el total real (con 400 ms de espera para no saturarlo).
+    let temporizador: ReturnType<typeof setTimeout> | undefined;
+    effect(() => {
+      const vacio = this.items().length === 0;
+      this.propinaPorcentaje();
+      this.cuponAplicado();
+      this.cotizacionServidor.set(null);
+      clearTimeout(temporizador);
+      if (vacio) return;
+      temporizador = setTimeout(async () => {
+        try {
+          this.cotizacionServidor.set(await this.pedirCotizacion());
+          this.errorCotizacion.set('');
+        } catch (error) {
+          this.errorCotizacion.set(mensajeError(error, 'No se pudo calcular el total.'));
+        }
+      }, 400);
     });
   }
 
@@ -154,20 +196,54 @@ export class CarritoService {
     return this.propinaPorcentaje();
   }
 
-  aplicarCupon(codigo: string): boolean {
+  /**
+   * Valida el cupón con el servidor (único lugar donde existen los cupones).
+   * Devuelve el mensaje de error, o null si quedó aplicado.
+   */
+  async aplicarCupon(codigo: string): Promise<string | null> {
     const normalizado = codigo.trim().toUpperCase();
-    const porcentaje = CONFIGURACION.cupones[normalizado];
-    if (porcentaje == null) {
-      return false;
+    try {
+      const cotizacion = await this.pedirCotizacion(normalizado);
+      this.cuponAplicado.set(normalizado);
+      this.descuentoPorcentaje.set(cotizacion.descuentoPorcentaje / 100);
+      this.cotizacionServidor.set(cotizacion);
+      return null;
+    } catch (error) {
+      return mensajeError(error, 'No se pudo validar el cupón.');
     }
-    this.cuponAplicado.set(normalizado);
-    this.descuentoPorcentaje.set(porcentaje);
-    return true;
   }
 
   quitarCupon(): void {
     this.cuponAplicado.set(null);
     this.descuentoPorcentaje.set(0);
+  }
+
+  /** Ítems en el formato que espera la API: solo identificadores, nunca precios. */
+  itemsParaApi() {
+    return this.items().map((item) => ({
+      productoId: item.productoId,
+      cantidad: item.cantidad,
+      ...(item.personalizacion.tamano ? { tamanoId: item.personalizacion.tamano.id } : {}),
+      extras: item.personalizacion.extras.map((e) => e.id),
+      salsas: item.personalizacion.salsas.map((s) => s.id),
+      retirados: item.personalizacion.retirados,
+      instrucciones: item.personalizacion.instrucciones,
+    }));
+  }
+
+  /** Propina en porcentaje entero, como la espera la API. */
+  propinaEntera(): number {
+    return Math.round(this.propinaPorcentaje() * 100);
+  }
+
+  private pedirCotizacion(cupon = this.cuponAplicado()): Promise<Cotizacion> {
+    return firstValueFrom(
+      this.api.post<Cotizacion>('/pedidos/cotizar', {
+        items: this.itemsParaApi(),
+        propinaPorcentaje: this.propinaEntera(),
+        ...(cupon ? { cupon } : {}),
+      }),
+    );
   }
 
   private cargar(): ItemCarrito[] {

@@ -3,6 +3,7 @@ import { ModalComponent } from '../modal/modal.component';
 import { MesaService } from '../../../core/services/mesa.service';
 import { UiService } from '../../../core/services/ui.service';
 import { NotificacionesService } from '../../../core/services/notificaciones.service';
+import { mensajeError } from '../../../core/services/api.service';
 import { TipoPedido } from '../../../models/mesa.model';
 
 @Component({
@@ -61,18 +62,25 @@ import { TipoPedido } from '../../../models/mesa.model';
           @if (tipo() === 'mesa') {
             <div class="space-y-2">
               <label for="numero-mesa" class="block text-sm font-semibold text-brasa-black">
-                Número de mesa
+                Código de la mesa
               </label>
               <input
                 id="numero-mesa"
-                type="number"
-                min="1"
-                inputmode="numeric"
-                class="w-full rounded-xl border border-brasa-border px-4 py-3 text-sm transition focus:border-brasa-orange focus:outline-none focus:ring-2 focus:ring-brasa-orange/30"
-                [value]="numero() ?? ''"
-                (input)="actualizarNumero($event)"
-                placeholder="Ej. 4"
+                type="text"
+                autocomplete="off"
+                autocapitalize="characters"
+                maxlength="12"
+                aria-describedby="ayuda-numero-mesa"
+                class="w-full rounded-xl border border-brasa-border px-4 py-3 text-sm uppercase tracking-widest transition focus:border-brasa-orange focus:outline-none focus:ring-2 focus:ring-brasa-orange/30"
+                [value]="codigo()"
+                (input)="actualizarCodigo($event)"
+                (keydown.enter)="guardar()"
+                placeholder="Ej. K7P2QXMA"
               />
+              <p id="ayuda-numero-mesa" class="text-xs text-brasa-muted">
+                Escanea el QR de tu mesa o escribe el código impreso debajo de él.
+                @if (mesa.codigo()) { Actualmente: {{ mesa.etiqueta() }}. }
+              </p>
               @if (error()) {
                 <p class="text-xs font-medium text-red-600" role="alert">{{ error() }}</p>
               }
@@ -90,9 +98,10 @@ import { TipoPedido } from '../../../models/mesa.model';
             <button
               type="button"
               class="flex-1 rounded-xl bg-brasa-orange px-4 py-3 text-sm font-semibold text-white transition hover:bg-brasa-orange-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-brasa-orange focus-visible:ring-offset-2"
+              [disabled]="validando()"
               (click)="guardar()"
             >
-              Guardar
+              {{ validando() ? 'Validando...' : 'Guardar' }}
             </button>
           </div>
         </div>
@@ -102,18 +111,19 @@ import { TipoPedido } from '../../../models/mesa.model';
 })
 export class CambiarMesaComponent {
   protected readonly ui = inject(UiService);
-  private readonly mesa = inject(MesaService);
+  protected readonly mesa = inject(MesaService);
   private readonly notificaciones = inject(NotificacionesService);
 
   protected readonly tipo = signal<TipoPedido>('mesa');
-  protected readonly numero = signal<number | null>(null);
+  protected readonly codigo = signal('');
   protected readonly error = signal('');
+  protected readonly validando = signal(false);
 
   constructor() {
     effect(() => {
       if (this.ui.modalCambiarMesaAbierto()) {
         this.tipo.set(this.mesa.tipo());
-        this.numero.set(this.mesa.numero());
+        this.codigo.set('');
         this.error.set('');
       }
     });
@@ -124,21 +134,33 @@ export class CambiarMesaComponent {
     this.error.set('');
   }
 
-  protected actualizarNumero(evento: Event): void {
-    const valor = (evento.target as HTMLInputElement).value;
-    this.numero.set(valor === '' ? null : Number(valor));
+  protected actualizarCodigo(evento: Event): void {
+    this.codigo.set((evento.target as HTMLInputElement).value.trim().toUpperCase());
     this.error.set('');
   }
 
-  protected guardar(): void {
-    if (this.tipo() === 'mesa' && (!this.numero() || this.numero()! <= 0)) {
-      this.error.set('Ingresa un número de mesa válido.');
+  protected async guardar(): Promise<void> {
+    if (this.tipo() === 'llevar') {
+      this.mesa.paraLlevar();
+      return this.listo();
+    }
+    if (!this.codigo() && this.mesa.codigo()) return this.cerrar();
+    if (!/^[A-Z0-9]{6,12}$/.test(this.codigo())) {
+      this.error.set('Escanea el QR de tu mesa o escribe el código impreso debajo de él.');
       return;
     }
-    this.mesa.establecerTipo(this.tipo());
-    if (this.tipo() === 'mesa') {
-      this.mesa.establecerMesa(this.numero());
+    this.validando.set(true);
+    try {
+      await this.mesa.usarCodigo(this.codigo());
+      this.listo();
+    } catch (e) {
+      this.error.set(mensajeError(e, 'No pudimos validar el código de la mesa.'));
+    } finally {
+      this.validando.set(false);
     }
+  }
+
+  private listo(): void {
     this.notificaciones.mostrar(`Ubicación actualizada: ${this.mesa.etiqueta()}`);
     this.cerrar();
   }

@@ -195,6 +195,13 @@ describe('API BRASA (e2e)', () => {
       await http.post('/api/pedidos').send({ tipo: 'llevar', items: [] }).expect(400);
     });
 
+    it('cotiza con las mismas reglas del servidor sin consumir el cupón', async () => {
+      const r = await http.post('/api/pedidos/cotizar').send({ items: [itemBasico], cupon: 'BRASA10', propinaPorcentaje: 10 }).expect(200);
+      expect(r.body).toMatchObject({ subtotal: 20000, descuento: 2000, impuestos: 3420, propina: 1800, total: 23220, cupon: 'BRASA10' });
+      expect((await prisma.cupon.findUniqueOrThrow({ where: { codigo: 'BRASA10' } })).usos).toBe(0);
+      await http.post('/api/pedidos/cotizar').send({ items: [itemBasico], cupon: 'NOEXISTE' }).expect(400);
+    });
+
     it('aplica cupones del servidor y respeta su límite de usos', async () => {
       const { pedido } = await crearPedido({ cupon: 'brasa10' });
       expect(pedido.resumen.total).toBe(18000 + Math.round(18000 * 0.19));
@@ -224,6 +231,10 @@ describe('API BRASA (e2e)', () => {
       const fin = await paso('MESERO', 'ENTREGADO').expect(200);
       expect(fin.body.estado).toBe('ENTREGADO');
       await paso('ADMIN', 'CANCELADO').expect(403);
+
+      // Entregado sin pagar: sigue visible para el mesero en "por cobrar".
+      const activos = await http.get('/api/pedidos/activos').set(auth('MESERO')).expect(200);
+      expect(activos.body.map((p: { id: string }) => p.id)).toContain(pedido.id);
 
       const eventos = await prisma.eventoPedido.findMany({ where: { pedidoId: pedido.id }, orderBy: { creadoEn: 'asc' } });
       expect(eventos.map((e) => e.estado)).toEqual(['PENDIENTE', 'CONFIRMADO', 'EN_PREPARACION', 'LISTO', 'ENTREGADO']);

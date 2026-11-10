@@ -102,52 +102,11 @@ export class PedidosService {
       mesaId = mesa.id;
     }
 
-    // Precios: siempre del catálogo de la base de datos.
-    const slugs = [...new Set(dto.items.map((i) => i.productoId))];
-    const registros = await this.prisma.producto.findMany({ where: { slug: { in: slugs } } });
-    const productos: (ProductoParaPrecio & { id: string })[] = registros.map((r) => ({
-      id: r.id,
-      slug: r.slug,
-      nombre: r.nombre,
-      precio: r.precio,
-      disponible: r.disponible,
-      tiempoPreparacionMin: r.tiempoPreparacionMin,
-      tamanos: leerJson(r.tamanos, []),
-      extras: leerJson(r.extras, []),
-      salsas: leerJson(r.salsas, []),
-      retirables: leerJson(r.retirables, []),
-    }));
-
-    let lineas;
-    try {
-      lineas = dto.items.map((item) => {
-        const producto = productos.find((p) => p.slug === item.productoId);
-        if (!producto) throw new ErrorDePedido(`El producto "${item.productoId}" no existe`);
-        return calcularLinea(producto, item);
-      });
-    } catch (e) {
-      if (e instanceof ErrorDePedido) throw new BadRequestException(e.message);
-      throw e;
-    }
+    const { productos, lineas } = await this.prepararLineas(dto);
 
     const tokenSeguimiento = generarToken();
     const pedido = await this.prisma.$transaction(async (tx) => {
-      let descuentoPorcentaje = 0;
-      let cuponCodigo: string | null = null;
-      if (dto.cupon) {
-        const codigo = dto.cupon.toUpperCase();
-        const cupon = await tx.cupon.findUnique({ where: { codigo } });
-        const vigente =
-          cupon &&
-          cupon.activo &&
-          (!cupon.venceEn || cupon.venceEn > new Date()) &&
-          (cupon.usosMax === null || cupon.usos < cupon.usosMax);
-        if (!vigente) throw new BadRequestException('El cupón no es válido o está vencido');
-        descuentoPorcentaje = cupon.porcentaje;
-        cuponCodigo = codigo;
-        await tx.cupon.update({ where: { codigo }, data: { usos: { increment: 1 } } });
-      }
-
+      const { descuentoPorcentaje, cuponCodigo } = await this.resolverCupon(tx, dto.cupon, true);
       const propinaPorcentaje = dto.propinaPorcentaje ?? 0;
       const totales = calcularTotales(lineas, descuentoPorcentaje, this.config.impuestoPorcentaje, propinaPorcentaje);
       const ultimo = await tx.pedido.aggregate({ _max: { numero: true } });
@@ -185,6 +144,73 @@ export class PedidosService {
     return { pedido: serializado, tokenSeguimiento };
   }
 
+  /** Vista previa del total con las mismas reglas del servidor, sin crear el pedido ni gastar el cupón. */
+  async cotizar(dto: Pick<CrearPedidoDto, 'items' | 'cupon' | 'propinaPorcentaje'>) {
+    if ((dto.propinaPorcentaje ?? 0) > this.config.propinaMaxPorcentaje) {
+      throw new BadRequestException(`La propina no puede superar el ${this.config.propinaMaxPorcentaje} %`);
+    }
+    const { productos, lineas } = await this.prepararLineas(dto);
+    const { descuentoPorcentaje, cuponCodigo } = await this.resolverCupon(this.prisma, dto.cupon, false);
+    return {
+      ...calcularTotales(lineas, descuentoPorcentaje, this.config.impuestoPorcentaje, dto.propinaPorcentaje ?? 0),
+      cupon: cuponCodigo,
+      descuentoPorcentaje,
+      impuestoPorcentaje: this.config.impuestoPorcentaje,
+      tiempoEstimadoMin: estimarTiempo(productos, lineas),
+      lineas: lineas.map((l) => ({ productoId: l.productoSlug, precioUnitario: l.precioUnitario, cantidad: l.cantidad })),
+    };
+  }
+
+  private async resolverCupon(
+    db: Prisma.TransactionClient,
+    codigoSolicitado: string | undefined,
+    consumir: boolean,
+  ): Promise<{ descuentoPorcentaje: number; cuponCodigo: string | null }> {
+    if (!codigoSolicitado) return { descuentoPorcentaje: 0, cuponCodigo: null };
+    const codigo = codigoSolicitado.toUpperCase();
+    const cupon = await db.cupon.findUnique({ where: { codigo } });
+    const vigente =
+      cupon &&
+      cupon.activo &&
+      (!cupon.venceEn || cupon.venceEn > new Date()) &&
+      (cupon.usosMax === null || cupon.usos < cupon.usosMax);
+    if (!vigente) throw new BadRequestException('El cupón no es válido o está vencido');
+    if (consumir) await db.cupon.update({ where: { codigo }, data: { usos: { increment: 1 } } });
+    return { descuentoPorcentaje: cupon.porcentaje, cuponCodigo: codigo };
+  }
+
+  /** Precios: siempre del catálogo de la base de datos. */
+  private async prepararLineas(dto: Pick<CrearPedidoDto, 'items'>) {
+    const slugs = [...new Set(dto.items.map((i) => i.productoId))];
+    const registros = await this.prisma.producto.findMany({ where: { slug: { in: slugs } } });
+    const productos: (ProductoParaPrecio & { id: string })[] = registros.map((r) => ({
+      id: r.id,
+      slug: r.slug,
+      nombre: r.nombre,
+      precio: r.precio,
+      disponible: r.disponible,
+      tiempoPreparacionMin: r.tiempoPreparacionMin,
+      tamanos: leerJson(r.tamanos, []),
+      extras: leerJson(r.extras, []),
+      salsas: leerJson(r.salsas, []),
+      retirables: leerJson(r.retirables, []),
+    }));
+
+    let lineas;
+    try {
+      lineas = dto.items.map((item) => {
+        const producto = productos.find((p) => p.slug === item.productoId);
+        if (!producto) throw new ErrorDePedido(`El producto "${item.productoId}" no existe`);
+        return calcularLinea(producto, item);
+      });
+    } catch (e) {
+      if (e instanceof ErrorDePedido) throw new BadRequestException(e.message);
+      throw e;
+    }
+
+    return { productos, lineas };
+  }
+
   /**
    * Devuelve el pedido si quien consulta tiene derecho: personal del restaurante, el cliente
    * dueño, o quien presente el token de seguimiento. En otro caso responde 404 para no revelar
@@ -208,9 +234,15 @@ export class PedidosService {
     return !!token && iguales(sha256(token), pedido.tokenSeguimientoHash);
   }
 
+  /** Pedidos en curso más los entregados que aún tienen saldo por cobrar. */
   async listarActivos() {
     const pedidos = await this.prisma.pedido.findMany({
-      where: { estado: { in: ESTADOS_ACTIVOS } },
+      where: {
+        OR: [
+          { estado: { in: ESTADOS_ACTIVOS } },
+          { estado: 'ENTREGADO', estadoPago: { in: ['PENDIENTE', 'PARCIAL'] } },
+        ],
+      },
       include: INCLUIR_PEDIDO,
       orderBy: { creadoEn: 'asc' },
     });

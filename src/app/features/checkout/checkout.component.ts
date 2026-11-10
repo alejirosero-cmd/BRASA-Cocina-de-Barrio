@@ -1,346 +1,240 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
-import { LucideArrowLeft, LucideCreditCard, LucideFileText, LucideInfo, LucideMinus, LucidePlus, LucideSmartphone, LucideUserPlus, LucideUsers, LucideX } from '@lucide/angular';
-import { CarritoService } from '../../core/services/carrito.service';
-import { MesaService } from '../../core/services/mesa.service';
+import { RouterLink } from '@angular/router';
+import { firstValueFrom } from 'rxjs';
+import { LucideArrowLeft, LucideCreditCard, LucideFileText, LucideInfo, LucideMinus, LucidePlus, LucideSmartphone, LucideUsers } from '@lucide/angular';
+import { ApiService, mensajeError } from '../../core/services/api.service';
 import { NotificacionesService } from '../../core/services/notificaciones.service';
 import { PedidosService } from '../../core/services/pedidos.service';
+import { SolicitudesMeseroService } from '../../core/services/solicitudes-mesero.service';
 import { PrecioCopPipe } from '../../shared/pipes/precio-cop.pipe';
 
-type MetodoPago = 'tarjeta' | 'nequi' | 'daviplata' | 'efectivo';
-type ModoDivision = 'igual' | 'consumo';
+type MetodoPago = 'linea' | 'mesa';
+type ModoDivision = 'total' | 'igual' | 'consumo';
 
-interface PersonaDivision {
-  id: string;
-  nombre: string;
-}
+/** Monto mínimo por pago en línea (coincide con el servidor). */
+const MONTO_MINIMO = 1500;
 
 @Component({
   selector: 'app-checkout',
-  imports: [
-    FormsModule,
-    RouterLink,
-    PrecioCopPipe,
-    LucideArrowLeft,
-    LucideCreditCard,
-    LucideSmartphone,
-    LucideUsers,
-    LucideUserPlus,
-    LucideX,
-    LucideFileText,
-    LucideInfo,
-    LucideMinus,
-    LucidePlus,
-  ],
+  imports: [FormsModule, RouterLink, PrecioCopPipe, LucideArrowLeft, LucideCreditCard, LucideSmartphone, LucideUsers, LucideFileText, LucideInfo, LucideMinus, LucidePlus],
   template: `
     <section class="mx-auto max-w-[1400px] px-5 py-10 md:px-10">
       <div class="mb-6">
-        <a routerLink="/carrito" class="inline-flex items-center gap-2 text-sm font-semibold text-brasa-muted transition hover:text-brasa-black">
+        <a [routerLink]="['/pedido', id()]" class="inline-flex items-center gap-2 text-sm font-semibold text-brasa-muted transition hover:text-brasa-black">
           <svg lucideArrowLeft [size]="16"></svg>
-          Volver al carrito
+          Volver al seguimiento
         </a>
-        <h1 class="mt-3 font-heading text-3xl font-bold tracking-tight text-brasa-black sm:text-4xl">Pago y facturación</h1>
-        <p class="mt-2 text-sm text-brasa-muted sm:text-base">Selecciona tu método de pago. Los datos de tarjeta no se almacenan.</p>
+        <h1 class="mt-3 font-heading text-3xl font-bold tracking-tight text-brasa-black sm:text-4xl">Pagar la cuenta</h1>
+        <p class="mt-2 text-sm text-brasa-muted sm:text-base">
+          Paga en línea con tarjeta, Nequi, PSE o Bancolombia, o pide pagar en la mesa. BRASA nunca ve ni guarda los datos de tu tarjeta.
+        </p>
       </div>
 
-      @if (carrito.estaVacio()) {
-        <div class="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-brasa-border px-6 py-16 text-center">
-          <p class="font-heading text-xl font-semibold text-brasa-black">No hay productos para pagar</p>
-          <p class="text-sm text-brasa-muted">Agrega productos al carrito para continuar con el pago.</p>
-          <a routerLink="/menu" class="mt-2 rounded-xl bg-brasa-orange px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-brasa-orange-dark">Ir al menú</a>
+      @if (cargando()) {
+        <p class="py-16 text-center text-sm text-brasa-muted" role="status">Cargando la cuenta...</p>
+      } @else if (!pedido()) {
+        <div class="rounded-2xl border border-dashed border-brasa-border px-6 py-16 text-center">
+          <p class="text-sm text-brasa-muted">{{ error() || 'No encontramos ese pedido.' }}</p>
+          <a routerLink="/historial" class="mt-4 inline-block rounded-xl bg-brasa-orange px-6 py-3 text-sm font-semibold text-white">Mis pedidos</a>
+        </div>
+      } @else if (pedido()!.saldo <= 0) {
+        <div class="rounded-2xl border border-green-200 bg-green-50 px-6 py-12 text-center">
+          <h2 class="font-heading text-xl font-semibold text-green-800">¡Cuenta pagada!</h2>
+          <p class="mt-2 text-sm text-green-700">El pedido {{ pedido()!.numero }} no tiene saldo pendiente.</p>
+          <a [routerLink]="['/pedido', pedido()!.id]" class="mt-4 inline-block rounded-xl bg-brasa-orange px-6 py-3 text-sm font-semibold text-white">Ver mi pedido</a>
         </div>
       } @else {
         <div class="grid grid-cols-1 gap-8 lg:grid-cols-12">
           <div class="flex flex-col gap-6 lg:col-span-7">
-            <div class="rounded-2xl border border-brasa-border bg-white shadow-card">
+            <!-- Método -->
+            <fieldset class="rounded-2xl border border-brasa-border bg-white shadow-card">
+              <legend class="sr-only">Método de pago</legend>
               <header class="border-b border-brasa-border px-6 py-4">
                 <h2 class="font-heading text-base font-semibold text-brasa-black">Método de pago</h2>
               </header>
-              <div class="grid grid-cols-1 gap-3 p-5 sm:grid-cols-2">
-                @for (metodo of metodos; track metodo.id) {
-                  <button
-                    type="button"
-                    class="flex items-center gap-3 rounded-xl border-2 p-4 text-left transition"
-                    [class]="metodoSeleccionado() === metodo.id ? 'border-brasa-orange bg-brasa-orange/5' : 'border-brasa-border hover:border-brasa-muted'"
-                    (click)="metodoSeleccionado.set(metodo.id)"
-                  >
-                    <span class="flex h-10 w-10 items-center justify-center rounded-lg bg-brasa-orange/10 text-brasa-orange">
-                      @if (metodo.id === 'tarjeta') { <svg lucideCreditCard [size]="18"></svg> }
-                      @else if (metodo.id === 'nequi' || metodo.id === 'daviplata') { <svg lucideSmartphone [size]="18"></svg> }
-                      @else { <svg lucideUsers [size]="18"></svg> }
+              <div class="grid grid-cols-1 gap-3 p-6 sm:grid-cols-2">
+                @for (m of metodos; track m.id) {
+                  <label class="flex cursor-pointer items-start gap-3 rounded-xl border-2 p-4 transition"
+                    [class]="metodo() === m.id ? 'border-brasa-orange bg-brasa-orange/5' : 'border-brasa-border hover:border-brasa-muted'">
+                    <input type="radio" name="metodo" class="mt-1 accent-brasa-orange" [checked]="metodo() === m.id" (change)="metodo.set(m.id)" />
+                    <span>
+                      <span class="flex items-center gap-2 font-semibold text-brasa-black">
+                        @if (m.id === 'linea') { <svg lucideSmartphone [size]="16" class="text-brasa-orange"></svg> } @else { <svg lucideCreditCard [size]="16" class="text-brasa-orange"></svg> }
+                        {{ m.titulo }}
+                      </span>
+                      <span class="mt-1 block text-xs text-brasa-muted">{{ m.descripcion }}</span>
                     </span>
-                    <div>
-                      <p class="font-semibold text-brasa-black">{{ metodo.titulo }}</p>
-                      <p class="text-xs text-brasa-muted">{{ metodo.descripcion }}</p>
-                    </div>
-                  </button>
+                  </label>
                 }
               </div>
-
-              @if (metodoSeleccionado() === 'tarjeta') {
-                <div class="space-y-4 border-t border-brasa-border p-6">
-                  <p class="text-xs text-brasa-muted">Simulación: no se envían datos reales. Usa solo para pruebas.</p>
-                  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <label class="space-y-1 text-sm">
-                      <span class="font-medium text-brasa-black">Nombre en la tarjeta</span>
-                      <input class="w-full rounded-xl border border-brasa-border px-4 py-3 outline-none focus:border-brasa-orange focus:ring-2 focus:ring-brasa-orange/30" placeholder="Nombre completo" />
-                    </label>
-                    <label class="space-y-1 text-sm">
-                      <span class="font-medium text-brasa-black">Número de tarjeta</span>
-                      <input class="w-full rounded-xl border border-brasa-border px-4 py-3 outline-none focus:border-brasa-orange focus:ring-2 focus:ring-brasa-orange/30" placeholder="0000 0000 0000 0000" inputmode="numeric" />
-                    </label>
-                    <label class="space-y-1 text-sm">
-                      <span class="font-medium text-brasa-black">Fecha de vencimiento</span>
-                      <input class="w-full rounded-xl border border-brasa-border px-4 py-3 outline-none focus:border-brasa-orange focus:ring-2 focus:ring-brasa-orange/30" placeholder="MM/AA" />
-                    </label>
-                    <label class="space-y-1 text-sm">
-                      <span class="font-medium text-brasa-black">CVV</span>
-                      <input class="w-full rounded-xl border border-brasa-border px-4 py-3 outline-none focus:border-brasa-orange focus:ring-2 focus:ring-brasa-orange/30" placeholder="123" inputmode="numeric" />
-                    </label>
-                  </div>
-                </div>
+              @if (proveedor() === 'simulado' && metodo() === 'linea') {
+                <p class="mx-6 mb-6 rounded-xl bg-amber-50 px-4 py-3 text-xs text-amber-800">
+                  Entorno de pruebas: la pasarela es un simulador y no se cobra dinero real.
+                </p>
               }
-            </div>
+            </fieldset>
 
+            <!-- División -->
             <div class="rounded-2xl border border-brasa-border bg-white shadow-card">
               <header class="flex items-center gap-2 border-b border-brasa-border px-6 py-4">
                 <svg lucideUsers [size]="18" class="text-brasa-orange"></svg>
-                <h2 class="font-heading text-base font-semibold text-brasa-black">Dividir la cuenta</h2>
+                <h2 class="font-heading text-base font-semibold text-brasa-black">¿Cuánto vas a pagar?</h2>
               </header>
               <div class="flex flex-col gap-4 p-6">
-                <div class="grid grid-cols-2 gap-2 rounded-xl bg-brasa-gray-light p-1">
-                  <button
-                    type="button"
-                    class="rounded-lg px-4 py-2 text-sm font-semibold transition"
-                    [class]="modoDivision() === 'igual' ? 'bg-white text-brasa-black shadow-sm' : 'text-brasa-muted hover:text-brasa-black'"
-                    (click)="modoDivision.set('igual')"
-                  >
-                    Partes iguales
-                  </button>
-                  <button
-                    type="button"
-                    class="rounded-lg px-4 py-2 text-sm font-semibold transition"
-                    [class]="modoDivision() === 'consumo' ? 'bg-white text-brasa-black shadow-sm' : 'text-brasa-muted hover:text-brasa-black'"
-                    (click)="modoDivision.set('consumo')"
-                  >
-                    Por lo que consumió
-                  </button>
+                <div class="flex flex-wrap gap-2" role="group" aria-label="Forma de dividir la cuenta">
+                  @for (d of divisiones; track d.id) {
+                    <button type="button" class="rounded-xl border px-4 py-2 text-sm font-semibold transition"
+                      [class]="modo() === d.id ? 'border-brasa-orange bg-brasa-orange/10 text-brasa-black' : 'border-brasa-border text-brasa-muted hover:text-brasa-black'"
+                      [attr.aria-pressed]="modo() === d.id" (click)="modo.set(d.id)">
+                      {{ d.titulo }}
+                    </button>
+                  }
                 </div>
 
-                @if (modoDivision() === 'igual') {
-                  <div class="rounded-xl border border-brasa-border">
-                    <div class="flex items-center justify-between border-b border-brasa-border px-5 py-4">
-                      <div>
-                        <p class="text-sm font-medium text-brasa-black">Número de personas</p>
-                        <p class="text-xs text-brasa-muted">Mínimo 2, máximo 10</p>
-                      </div>
-                      <div class="inline-flex items-center rounded-xl border border-brasa-border">
-                        <button
-                          type="button"
-                          class="p-2.5 text-brasa-black transition hover:text-brasa-orange disabled:cursor-not-allowed disabled:opacity-40"
-                          (click)="disminuirPersonas()"
-                          [disabled]="personas() <= 2"
-                          aria-label="Reducir número de personas"
-                        >
-                          <svg lucideMinus [size]="16"></svg>
-                        </button>
-                        <span class="min-w-10 text-center font-semibold">{{ personas() }}</span>
-                        <button
-                          type="button"
-                          class="p-2.5 text-brasa-black transition hover:text-brasa-orange disabled:cursor-not-allowed disabled:opacity-40"
-                          (click)="incrementarPersonas()"
-                          [disabled]="personas() >= 10"
-                          aria-label="Aumentar número de personas"
-                        >
-                          <svg lucidePlus [size]="16"></svg>
-                        </button>
-                      </div>
-                    </div>
-
-                    <div class="space-y-2 px-5 py-4">
-                      <div class="flex items-center justify-between text-sm">
-                        <span class="text-brasa-muted">Total a dividir</span>
-                        <span class="font-semibold text-brasa-black">{{ carrito.total() | precioCop }}</span>
-                      </div>
-                      @if (resto() > 0) {
-                        <p class="text-xs text-brasa-muted">Se redondea hacia arriba para simplificar el cobro.</p>
-                      }
-                      <div class="mt-2 flex items-center justify-between rounded-xl bg-brasa-orange/5 px-4 py-3">
-                        <span class="font-medium text-brasa-black">Cada uno paga</span>
-                        <span class="font-heading text-xl font-bold text-brasa-orange">{{ totalPorPersona() | precioCop }}</span>
-                      </div>
-                    </div>
+                @if (modo() === 'igual') {
+                  <div class="flex items-center gap-4">
+                    <span class="text-sm text-brasa-muted">Personas</span>
+                    <button type="button" class="rounded-lg border border-brasa-border p-2" aria-label="Menos personas" (click)="personas.set(Math.max(2, personas() - 1))"><svg lucideMinus [size]="16"></svg></button>
+                    <span class="w-6 text-center font-semibold" aria-live="polite">{{ personas() }}</span>
+                    <button type="button" class="rounded-lg border border-brasa-border p-2" aria-label="Más personas" (click)="personas.set(Math.min(10, personas() + 1))"><svg lucidePlus [size]="16"></svg></button>
                   </div>
+                  <p class="text-xs text-brasa-muted">Cada persona paga {{ parteIgual() | precioCop }} desde su celular. Quien pague de último cubre el saldo restante.</p>
                 }
 
-                @if (modoDivision() === 'consumo') {
-                  <div class="space-y-4">
-                    <div class="flex flex-wrap items-center gap-2">
-                      @for (persona of personasLista(); track persona.id) {
-                        <div class="inline-flex items-center gap-2 rounded-full border border-brasa-border bg-white px-3 py-1.5">
-                          <span class="text-sm font-medium text-brasa-black">{{ persona.nombre }}</span>
-                          @if (personasLista().length > 2) {
-                            <button type="button" class="text-brasa-muted transition hover:text-brasa-black" (click)="eliminarPersona(persona.id)" aria-label="Eliminar persona">
-                              <svg lucideX [size]="14"></svg>
-                            </button>
-                          }
-                        </div>
-                      }
-                      <button
-                        type="button"
-                        class="inline-flex items-center gap-1.5 rounded-full border border-dashed border-brasa-border px-3 py-1.5 text-sm text-brasa-muted transition hover:border-brasa-orange hover:text-brasa-orange disabled:cursor-not-allowed disabled:opacity-40"
-                        (click)="agregarPersona()"
-                        [disabled]="personasLista().length >= 10"
-                      >
-                        <svg lucideUserPlus [size]="16"></svg>
-                        Agregar persona
-                      </button>
-                    </div>
-
-                    <div class="space-y-3">
-                      @for (item of carrito.lineas(); track item.id) {
-                        <div class="rounded-xl border border-brasa-border p-4">
-                          <div class="flex items-start justify-between gap-3">
-                            <div class="flex items-center gap-3">
-                              <img [src]="item.imagenUrl" [alt]="item.nombre" width="48" height="48" class="h-12 w-12 rounded-xl border border-brasa-border object-cover" />
-                              <div>
-                                <p class="font-semibold text-brasa-black">{{ item.nombre }}</p>
-                                <p class="text-xs text-brasa-muted">{{ item.cantidad }} x {{ item.precioUnitario | precioCop }} · {{ (item.precioUnitario * item.cantidad) | precioCop }}</p>
-                              </div>
-                            </div>
-                            <button type="button" class="text-xs font-semibold text-brasa-orange" (click)="asignarATodos(item.id)">Pagar entre todos</button>
-                          </div>
-                          <div class="mt-3 flex flex-wrap gap-2">
-                            @for (persona of personasLista(); track persona.id) {
-                              <button
-                                type="button"
-                                class="rounded-full border px-3 py-1.5 text-sm transition"
-                                [class]="estaAsignado(item.id, persona.id) ? 'border-brasa-orange bg-brasa-orange/10 text-brasa-black' : 'border-brasa-border text-brasa-muted hover:border-brasa-muted hover:text-brasa-black'"
-                                (click)="alternarAsignacion(item.id, persona.id)"
-                              >
-                                {{ persona.nombre }}
-                              </button>
-                            }
-                          </div>
-                        </div>
-                      }
-                    </div>
-
-                    @if (itemsSinAsignar().length > 0) {
-                      <div class="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                        <svg lucideInfo [size]="16" class="mt-0.5 shrink-0"></svg>
-                        Hay {{ itemsSinAsignar().length }} producto(s) sin asignar. Debes seleccionar quién lo paga para calcular correctamente.
-                      </div>
+                @if (modo() === 'consumo') {
+                  <p class="text-sm text-brasa-muted">Marca lo que consumiste tú. Impuestos y propina se reparten en proporción.</p>
+                  <ul class="flex flex-col gap-2">
+                    @for (item of pedido()!.items; track item.id) {
+                      <li>
+                        <label class="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-brasa-border px-4 py-3">
+                          <span class="flex items-center gap-3">
+                            <input type="checkbox" class="accent-brasa-orange" [checked]="seleccionados().has(item.id)" (change)="alternar(item.id)" />
+                            <span class="text-sm font-medium text-brasa-black">{{ item.cantidad }} × {{ item.nombre }}</span>
+                          </span>
+                          <span class="text-sm font-semibold">{{ item.precioUnitario * item.cantidad | precioCop }}</span>
+                        </label>
+                      </li>
                     }
-
-                    @if (totalesPorPersona().length > 0 && itemsSinAsignar().length === 0) {
-                      <div class="space-y-2">
-                        <p class="text-sm font-semibold text-brasa-black">A pagar por persona</p>
-                        @for (tp of totalesPorPersona(); track tp.persona.id) {
-                          <div class="flex items-center justify-between rounded-xl border border-brasa-border px-4 py-3">
-                            <div>
-                              <p class="font-medium text-brasa-black">{{ tp.persona.nombre }}</p>
-                              <p class="text-xs text-brasa-muted">Consumo: {{ tp.subtotal | precioCop }}</p>
-                            </div>
-                            <span class="font-heading text-lg font-bold text-brasa-orange">{{ tp.total | precioCop }}</span>
-                          </div>
-                        }
-                      </div>
-                    }
-                  </div>
+                  </ul>
                 }
               </div>
             </div>
 
+            <!-- Propina -->
+            @if (pedido()!.pagado === 0) {
+              <div class="rounded-2xl border border-brasa-border bg-white p-6 shadow-card">
+                <h2 class="font-heading text-base font-semibold text-brasa-black">Propina voluntaria</h2>
+                <div class="mt-3 flex flex-wrap gap-2">
+                  @for (p of propinas; track p) {
+                    <button type="button" class="rounded-xl border px-3 py-1.5 text-sm font-semibold transition disabled:opacity-50"
+                      [class]="pedido()!.propinaPorcentaje === p ? 'border-brasa-orange bg-brasa-orange/10 text-brasa-black' : 'border-brasa-border text-brasa-muted hover:text-brasa-black'"
+                      [disabled]="procesando()" (click)="cambiarPropina(p)">
+                      {{ p === 0 ? 'Sin propina' : p + '%' }}
+                    </button>
+                  }
+                </div>
+              </div>
+            }
+
+            <!-- Factura electrónica -->
             <div class="rounded-2xl border border-brasa-border bg-white shadow-card">
               <header class="flex items-center gap-2 border-b border-brasa-border px-6 py-4">
                 <svg lucideFileText [size]="18" class="text-brasa-orange"></svg>
                 <h2 class="font-heading text-base font-semibold text-brasa-black">Factura electrónica</h2>
               </header>
               <div class="flex flex-col gap-3 p-6">
-                <label class="flex items-center gap-3 text-sm">
-                  <input type="checkbox" class="h-4 w-4 rounded border-brasa-border text-brasa-orange focus:ring-brasa-orange" [checked]="solicitarFactura()" (change)="solicitarFactura.set($any($event.target).checked)" />
-                  <span class="text-brasa-black">Solicitar factura electrónica</span>
-                </label>
-                @if (solicitarFactura()) {
-                  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <label class="space-y-1 text-sm">
-                      <span class="font-medium text-brasa-black">NIT / Identificación</span>
-                      <input class="w-full rounded-xl border border-brasa-border px-4 py-3 outline-none focus:border-brasa-orange focus:ring-2 focus:ring-brasa-orange/30" placeholder="Número de identificación" />
-                    </label>
-                    <label class="space-y-1 text-sm">
-                      <span class="font-medium text-brasa-black">Correo electrónico</span>
-                      <input type="email" class="w-full rounded-xl border border-brasa-border px-4 py-3 outline-none focus:border-brasa-orange focus:ring-2 focus:ring-brasa-orange/30" placeholder="correo@ejemplo.com" />
-                    </label>
-                  </div>
+                @if (pedido()!.facturaSolicitada || facturaGuardada()) {
+                  <p class="rounded-xl bg-green-50 px-4 py-3 text-sm text-green-700">Recibimos tus datos de facturación. La factura llegará a tu correo.</p>
+                } @else {
+                  <label class="flex items-center gap-3 text-sm">
+                    <input type="checkbox" class="h-4 w-4 accent-brasa-orange" [checked]="solicitarFactura()" (change)="solicitarFactura.set($any($event.target).checked)" />
+                    <span class="text-brasa-black">Solicitar factura electrónica</span>
+                  </label>
+                  @if (solicitarFactura()) {
+                    <form class="grid grid-cols-1 gap-4 sm:grid-cols-2" (ngSubmit)="guardarFactura()">
+                      <label class="space-y-1 text-sm">
+                        <span class="font-medium text-brasa-black">Tipo de documento</span>
+                        <select name="tipo" class="w-full rounded-xl border border-brasa-border px-4 py-3" [(ngModel)]="factura.tipoDocumento" required>
+                          <option value="CC">Cédula de ciudadanía</option>
+                          <option value="NIT">NIT</option>
+                          <option value="CE">Cédula de extranjería</option>
+                          <option value="PP">Pasaporte</option>
+                        </select>
+                      </label>
+                      <label class="space-y-1 text-sm">
+                        <span class="font-medium text-brasa-black">Número</span>
+                        <input name="numero" class="w-full rounded-xl border border-brasa-border px-4 py-3" [(ngModel)]="factura.numeroDocumento" required pattern="[0-9A-Za-z-]{5,20}" autocomplete="off" />
+                      </label>
+                      <label class="space-y-1 text-sm">
+                        <span class="font-medium text-brasa-black">Nombre o razón social</span>
+                        <input name="nombre" class="w-full rounded-xl border border-brasa-border px-4 py-3" [(ngModel)]="factura.nombre" required minlength="2" maxlength="120" autocomplete="name" />
+                      </label>
+                      <label class="space-y-1 text-sm">
+                        <span class="font-medium text-brasa-black">Correo electrónico</span>
+                        <input name="correo" type="email" class="w-full rounded-xl border border-brasa-border px-4 py-3" [(ngModel)]="factura.correo" required autocomplete="email" />
+                      </label>
+                      <label class="flex items-start gap-3 text-xs text-brasa-muted sm:col-span-2">
+                        <input name="acepta" type="checkbox" class="mt-0.5 h-4 w-4 accent-brasa-orange" [(ngModel)]="factura.aceptaTratamientoDatos" required />
+                        Autorizo a BRASA a tratar mis datos personales únicamente para emitir y enviar la factura electrónica, conforme a la Ley 1581 de 2012.
+                      </label>
+                      @if (errorFactura()) {
+                        <p class="text-sm text-red-700 sm:col-span-2" role="alert">{{ errorFactura() }}</p>
+                      }
+                      <button type="submit" class="rounded-xl border border-brasa-orange px-4 py-2.5 text-sm font-semibold text-brasa-orange sm:col-span-2" [disabled]="procesando()">Guardar datos de facturación</button>
+                    </form>
+                  }
                 }
               </div>
             </div>
           </div>
 
+          <!-- Resumen -->
           <div class="lg:col-span-5">
             <div class="flex flex-col gap-6 lg:sticky lg:top-24">
               <div class="rounded-2xl border border-brasa-border bg-white shadow-card">
                 <header class="border-b border-brasa-border px-6 py-4">
-                  <h2 class="font-heading text-base font-semibold text-brasa-black">Resumen</h2>
+                  <h2 class="font-heading text-base font-semibold text-brasa-black">Pedido {{ pedido()!.numero }}</h2>
                 </header>
-                <div class="flex flex-col gap-3 px-6 py-5">
-                  @for (item of carrito.lineas(); track item.id) {
-                    <div class="flex items-center justify-between gap-3 text-sm">
-                      <div class="flex items-center gap-3">
-                        <img [src]="item.imagenUrl" [alt]="item.nombre" width="48" height="48" class="h-12 w-12 rounded-xl border border-brasa-border object-cover" />
-                        <div>
-                          <p class="font-semibold text-brasa-black">{{ item.nombre }}</p>
-                          <p class="text-xs text-brasa-muted">{{ item.cantidad }} x {{ item.precioUnitario | precioCop }}</p>
-                        </div>
-                      </div>
-                      <span class="font-semibold text-brasa-black">{{ item.precioUnitario * item.cantidad | precioCop }}</span>
-                    </div>
+                <dl class="flex flex-col gap-2 px-6 py-5 text-sm">
+                  <div class="flex justify-between"><dt class="text-brasa-muted">Subtotal</dt><dd>{{ pedido()!.resumen.subtotal | precioCop }}</dd></div>
+                  @if (pedido()!.resumen.descuento) {
+                    <div class="flex justify-between"><dt class="text-brasa-muted">Descuento</dt><dd class="text-green-600">−{{ pedido()!.resumen.descuento | precioCop }}</dd></div>
                   }
-                  <div class="border-t border-brasa-border pt-3">
-                    <div class="flex items-center justify-between text-sm">
-                      <span class="text-brasa-muted">Subtotal</span>
-                      <span class="font-semibold text-brasa-black">{{ carrito.subtotal() | precioCop }}</span>
-                    </div>
-                    <div class="flex items-center justify-between text-sm">
-                      <span class="text-brasa-muted">Impuestos</span>
-                      <span class="font-semibold text-brasa-black">{{ carrito.impuestos() | precioCop }}</span>
-                    </div>
-                    <div class="flex items-center justify-between text-sm">
-                      <span class="text-brasa-muted">Propina</span>
-                      <span class="font-semibold text-brasa-black">{{ carrito.propina() | precioCop }}</span>
-                    </div>
-                    @if (carrito.descuento() > 0) {
-                      <div class="flex items-center justify-between text-sm">
-                        <span class="text-brasa-muted">Descuento</span>
-                        <span class="font-semibold text-green-600">-{{ carrito.descuento() | precioCop }}</span>
-                      </div>
-                    }
-                    <div class="mt-3 flex items-center justify-between border-t border-brasa-border pt-3">
-                      <span class="font-heading text-base font-semibold text-brasa-black">Total</span>
-                      <span class="font-heading text-2xl font-bold text-brasa-orange">{{ carrito.total() | precioCop }}</span>
-                    </div>
+                  <div class="flex justify-between"><dt class="text-brasa-muted">Impuestos</dt><dd>{{ pedido()!.resumen.impuestos | precioCop }}</dd></div>
+                  <div class="flex justify-between"><dt class="text-brasa-muted">Propina ({{ pedido()!.propinaPorcentaje }}%)</dt><dd>{{ pedido()!.resumen.propina | precioCop }}</dd></div>
+                  <div class="flex justify-between border-t border-brasa-border pt-2 font-semibold"><dt>Total</dt><dd>{{ pedido()!.resumen.total | precioCop }}</dd></div>
+                  @if (pedido()!.pagado > 0) {
+                    <div class="flex justify-between text-green-700"><dt>Ya pagado</dt><dd>{{ pedido()!.pagado | precioCop }}</dd></div>
+                  }
+                  <div class="flex justify-between"><dt class="text-brasa-muted">Saldo pendiente</dt><dd class="font-semibold">{{ pedido()!.saldo | precioCop }}</dd></div>
+                  <div class="mt-2 flex items-center justify-between border-t border-brasa-border pt-4">
+                    <dt class="font-heading text-base font-semibold">Vas a pagar</dt>
+                    <dd class="font-heading text-2xl font-bold text-brasa-orange" aria-live="polite">{{ montoAPagar() | precioCop }}</dd>
                   </div>
-                </div>
+                </dl>
               </div>
 
-              <button
-                type="button"
+              @if (error()) {
+                <p class="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{{ error() }}</p>
+              }
+
+              <button type="button"
                 class="flex w-full items-center justify-center gap-2 rounded-xl bg-brasa-orange px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-brasa-orange-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-brasa-orange focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                [disabled]="!puedePagar()"
-                (click)="pagar()"
-              >
+                [disabled]="!puedePagar() || procesando()" (click)="pagar()">
                 <svg lucideCreditCard [size]="18"></svg>
-                Confirmar y pagar
+                {{ procesando() ? 'Procesando...' : metodo() === 'linea' ? 'Ir a pagar ' : 'Pedir la cuenta al mesero' }}
+                @if (metodo() === 'linea' && !procesando()) { {{ montoAPagar() | precioCop }} }
               </button>
 
               <div class="flex items-start gap-3 rounded-2xl border border-brasa-border bg-white px-5 py-4 text-xs text-brasa-muted">
                 <svg lucideInfo [size]="16" class="mt-0.5 shrink-0 text-brasa-orange"></svg>
-                @if (modoDivision() === 'consumo' && itemsSinAsignar().length > 0) {
-                  Asigna todos los productos a alguna persona para poder confirmar el pago.
+                @if (motivoNoPago()) {
+                  {{ motivoNoPago() }}
+                } @else if (metodo() === 'linea') {
+                  Serás redirigido a la pasarela segura de Wompi. El pago se confirma cuando Wompi nos notifica, no antes.
                 } @else {
-                  Pasarela de pago en preparación. Esta es una simulación para pruebas.
+                  Un mesero llevará el datáfono o recibirá el efectivo en tu mesa.
                 }
               </div>
             </div>
@@ -351,170 +245,142 @@ interface PersonaDivision {
   `,
 })
 export class CheckoutComponent {
-  private readonly router = inject(Router);
-  protected readonly carrito = inject(CarritoService);
-  private readonly mesa = inject(MesaService);
+  private readonly api = inject(ApiService);
   private readonly pedidos = inject(PedidosService);
+  private readonly solicitudes = inject(SolicitudesMeseroService);
   private readonly notificaciones = inject(NotificacionesService);
 
-  protected readonly metodoSeleccionado = signal<MetodoPago>('tarjeta');
-  protected readonly dividir = signal(false);
+  readonly id = input.required<string>();
+
+  protected readonly pedido = this.pedidos.pedido;
+  protected readonly cargando = signal(true);
+  protected readonly procesando = signal(false);
+  protected readonly error = signal('');
+  protected readonly proveedor = signal<'wompi' | 'simulado' | null>(null);
+  protected readonly metodo = signal<MetodoPago>('linea');
+  protected readonly modo = signal<ModoDivision>('total');
   protected readonly personas = signal(2);
+  protected readonly seleccionados = signal<Set<string>>(new Set());
   protected readonly solicitarFactura = signal(false);
+  protected readonly facturaGuardada = signal(false);
+  protected readonly errorFactura = signal('');
+  protected readonly Math = Math;
+  protected factura = { tipoDocumento: 'CC', numeroDocumento: '', nombre: '', correo: '', aceptaTratamientoDatos: false };
 
-  protected readonly modoDivision = signal<ModoDivision>('igual');
-  protected readonly personasLista = signal<PersonaDivision[]>([
-    { id: 'p1', nombre: 'Persona 1' },
-    { id: 'p2', nombre: 'Persona 2' },
-  ]);
-  protected readonly asignaciones = signal<Record<string, string[]>>({});
+  protected readonly metodos: { id: MetodoPago; titulo: string; descripcion: string }[] = [
+    { id: 'linea', titulo: 'Pagar en línea', descripcion: 'Tarjeta, Nequi, PSE o Bancolombia a través de Wompi' },
+    { id: 'mesa', titulo: 'Efectivo o datáfono', descripcion: 'El mesero te cobra en la mesa' },
+  ];
+  protected readonly divisiones: { id: ModoDivision; titulo: string }[] = [
+    { id: 'total', titulo: 'Todo el saldo' },
+    { id: 'igual', titulo: 'Partes iguales' },
+    { id: 'consumo', titulo: 'Por lo que consumí' },
+  ];
+  protected readonly propinas = [0, 5, 10, 15];
 
-  protected readonly totalPorPersona = computed(() => {
-    const p = this.personas() <= 0 ? 1 : this.personas();
-    return Math.ceil(this.carrito.total() / p);
+  protected readonly parteIgual = computed(() => {
+    const p = this.pedido();
+    return p ? Math.ceil(p.resumen.total / this.personas()) : 0;
   });
 
-  protected readonly resto = computed(() => {
-    const p = this.personas() <= 0 ? 1 : this.personas();
-    return this.carrito.total() % p;
+  protected readonly montoAPagar = computed(() => {
+    const p = this.pedido();
+    if (!p) return 0;
+    let monto = p.saldo;
+    if (this.modo() === 'igual') monto = this.parteIgual();
+    if (this.modo() === 'consumo') {
+      const mio = p.items.filter((i) => this.seleccionados().has(i.id)).reduce((s, i) => s + i.precioUnitario * i.cantidad, 0);
+      monto = p.resumen.subtotal ? Math.round((mio / p.resumen.subtotal) * p.resumen.total) : 0;
+    }
+    // Si lo que queda después de este pago es menor al mínimo, se cobra todo el saldo.
+    if (p.saldo - monto < MONTO_MINIMO) monto = p.saldo;
+    return Math.min(monto, p.saldo);
   });
 
-  protected incrementarPersonas(): void {
-    if (this.personas() < 10) {
-      this.personas.update((v) => v + 1);
-    }
+  protected readonly motivoNoPago = computed(() => {
+    if (this.metodo() !== 'linea') return '';
+    const monto = this.montoAPagar();
+    if (this.modo() === 'consumo' && monto === 0) return 'Selecciona lo que consumiste para calcular tu parte.';
+    if (monto < Math.min(MONTO_MINIMO, this.pedido()?.saldo ?? 0)) return `El pago mínimo en línea es de $${MONTO_MINIMO.toLocaleString('es-CO')}.`;
+    return '';
+  });
+
+  protected readonly puedePagar = computed(() => !!this.pedido() && this.pedido()!.estado !== 'CANCELADO' && !this.motivoNoPago());
+
+  constructor() {
+    firstValueFrom(this.api.get<{ proveedor: 'wompi' | 'simulado' }>('/pagos/proveedor'))
+      .then((r) => this.proveedor.set(r.proveedor))
+      .catch(() => undefined);
+    effect(() => {
+      const id = this.id();
+      this.cargando.set(true);
+      this.pedidos
+        .cargar(id)
+        .catch((e) => this.error.set(mensajeError(e, 'No encontramos ese pedido en este dispositivo.')))
+        .finally(() => this.cargando.set(false));
+    });
   }
 
-  protected disminuirPersonas(): void {
-    if (this.personas() > 2) {
-      this.personas.update((v) => v - 1);
-    }
-  }
-
-  protected agregarPersona(): void {
-    if (this.personasLista().length >= 10) return;
-    const numero = this.personasLista().length + 1;
-    this.personasLista.update((actuales) => [
-      ...actuales,
-      { id: `p${Date.now()}`, nombre: `Persona ${numero}` },
-    ]);
-  }
-
-  protected eliminarPersona(id: string): void {
-    if (this.personasLista().length <= 2) return;
-    this.personasLista.update((actuales) => actuales.filter((p) => p.id !== id));
-    this.asignaciones.update((actual) => {
-      const copia: Record<string, string[]> = { ...actual };
-      Object.keys(copia).forEach((itemId) => {
-        copia[itemId] = copia[itemId].filter((pid) => pid !== id);
-        if (copia[itemId].length === 0) {
-          delete copia[itemId];
-        }
-      });
+  protected alternar(itemId: string): void {
+    this.seleccionados.update((s) => {
+      const copia = new Set(s);
+      if (copia.has(itemId)) copia.delete(itemId);
+      else copia.add(itemId);
       return copia;
     });
   }
 
-  protected estaAsignado(itemId: string, personaId: string): boolean {
-    return (this.asignaciones()[itemId] || []).includes(personaId);
-  }
-
-  protected alternarAsignacion(itemId: string, personaId: string): void {
-    this.asignaciones.update((actual) => {
-      const actuales = actual[itemId] || [];
-      if (actuales.includes(personaId)) {
-        const filtrados = actuales.filter((id) => id !== personaId);
-        if (filtrados.length === 0) {
-          const copia: Record<string, string[]> = { ...actual };
-          delete copia[itemId];
-          return copia;
-        }
-        return { ...actual, [itemId]: filtrados };
-      }
-      return { ...actual, [itemId]: [...actuales, personaId] };
-    });
-  }
-
-  protected asignarATodos(itemId: string): void {
-    this.asignaciones.update((actual) => ({
-      ...actual,
-      [itemId]: this.personasLista().map((p) => p.id),
-    }));
-  }
-
-  protected readonly totalesPorPersona = computed(() => {
-    if (this.modoDivision() !== 'consumo') return [];
-    const items = this.carrito.lineas();
-    const personas = this.personasLista();
-    const subtotalTotal = this.carrito.subtotal();
-    const descuentoTotal = this.carrito.descuento();
-    const impuestosTotal = this.carrito.impuestos();
-    const propinaTotal = this.carrito.propina();
-
-    return personas.map((persona) => {
-      let subtotalPersona = 0;
-      items.forEach((item) => {
-        const asignados = this.asignaciones()[item.id] || [];
-        if (asignados.includes(persona.id) && asignados.length > 0) {
-          subtotalPersona += (item.precioUnitario * item.cantidad) / asignados.length;
-        }
-      });
-      subtotalPersona = Math.round(subtotalPersona);
-
-      const ratio = subtotalTotal === 0 ? 0 : subtotalPersona / subtotalTotal;
-      const descuentoPersona = Math.round(descuentoTotal * ratio);
-      const base = subtotalPersona - descuentoPersona;
-      const impuestosPersona = Math.round(impuestosTotal * ratio);
-      const propinaPersona = Math.round(propinaTotal * ratio);
-      const totalPersona = base + impuestosPersona + propinaPersona;
-
-      return {
-        persona,
-        subtotal: subtotalPersona,
-        descuento: descuentoPersona,
-        impuestos: impuestosPersona,
-        propina: propinaPersona,
-        total: totalPersona,
-      };
-    });
-  });
-
-  protected readonly itemsSinAsignar = computed(() => {
-    if (this.modoDivision() !== 'consumo') return [];
-    return this.carrito.lineas().filter((item) => !(this.asignaciones()[item.id]?.length));
-  });
-
-  protected readonly puedePagar = computed(() => {
-    if (this.carrito.estaVacio()) return false;
-    if (this.modoDivision() === 'consumo') {
-      return this.itemsSinAsignar().length === 0;
+  protected async cambiarPropina(porcentaje: number): Promise<void> {
+    this.procesando.set(true);
+    try {
+      await this.pedidos.cambiarPropina(this.id(), porcentaje);
+    } catch (e) {
+      this.notificaciones.mostrar(mensajeError(e), 'error');
+    } finally {
+      this.procesando.set(false);
     }
-    return true;
-  });
+  }
 
-  protected readonly metodos: { id: MetodoPago; titulo: string; descripcion: string }[] = [
-    { id: 'tarjeta', titulo: 'Tarjeta de crédito/débito', descripcion: 'Visa, Mastercard, Amex' },
-    { id: 'nequi', titulo: 'Nequi', descripcion: 'Pago con tu cuenta Nequi' },
-    { id: 'daviplata', titulo: 'Daviplata', descripcion: 'Pago con Daviplata' },
-    { id: 'efectivo', titulo: 'Efectivo / Datáfono en mesa', descripcion: 'Paga en caja o con datáfono' },
-  ];
+  protected async guardarFactura(): Promise<void> {
+    this.errorFactura.set('');
+    if (!this.factura.aceptaTratamientoDatos) {
+      this.errorFactura.set('Debes autorizar el tratamiento de datos para emitir la factura.');
+      return;
+    }
+    this.procesando.set(true);
+    try {
+      await this.pedidos.guardarFactura(this.id(), this.factura);
+      this.facturaGuardada.set(true);
+    } catch (e) {
+      this.errorFactura.set(mensajeError(e));
+    } finally {
+      this.procesando.set(false);
+    }
+  }
 
-  async pagar(): Promise<void> {
-    if (this.carrito.estaVacio()) return;
-    const pedido = await this.pedidos.crearPedido({
-      items: this.carrito.lineas(),
-      resumen: {
-        subtotal: this.carrito.subtotal(),
-        impuestos: this.carrito.impuestos(),
-        propina: this.carrito.propina(),
-        descuento: this.carrito.descuento(),
-        total: this.carrito.total(),
-      },
-      mesa: { tipo: this.mesa.tipo(), numero: this.mesa.numero() },
-      notasCocina: '',
-    });
-    this.carrito.limpiar();
-    this.notificaciones.mostrar(`Pedido confirmado · ${pedido.numero}`);
-    this.router.navigate(['/pedido']);
+  protected async pagar(): Promise<void> {
+    if (!this.puedePagar() || this.procesando()) return;
+    this.procesando.set(true);
+    this.error.set('');
+    try {
+      if (this.metodo() === 'mesa') {
+        await this.solicitudes.enviar('cuenta');
+        this.notificaciones.mostrar('Un mesero irá a tu mesa para cobrarte');
+        return;
+      }
+      const r = await firstValueFrom(
+        this.api.post<{ urlCheckout: string }>('/pagos', { pedidoId: this.id(), monto: this.montoAPagar() }, this.pedidos.cabeceras(this.id())),
+      );
+      // Solo se redirige a la pasarela de Wompi o al simulador del propio sitio.
+      const destino = new URL(r.urlCheckout);
+      if (destino.origin !== 'https://checkout.wompi.co' && destino.origin !== location.origin) {
+        throw new Error('Destino de pago no permitido');
+      }
+      location.assign(destino.toString());
+    } catch (e) {
+      this.error.set(mensajeError(e, 'No se pudo iniciar el pago.'));
+    } finally {
+      this.procesando.set(false);
+    }
   }
 }

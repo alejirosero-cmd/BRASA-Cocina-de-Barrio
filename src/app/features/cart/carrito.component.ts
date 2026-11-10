@@ -1,6 +1,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import {
   LucideArrowLeft,
   LucideMinus,
@@ -16,16 +16,16 @@ import { MesaService } from '../../core/services/mesa.service';
 import { NotificacionesService } from '../../core/services/notificaciones.service';
 import { PedidosService } from '../../core/services/pedidos.service';
 import { CONFIGURACION } from '../../core/config/configuracion';
+import { mensajeError } from '../../core/services/api.service';
+import { UiService } from '../../core/services/ui.service';
 import { ItemCarrito } from '../../models/carrito.model';
 import { PrecioCopPipe } from '../../shared/pipes/precio-cop.pipe';
-import { ModalComponent } from '../../shared/components/modal/modal.component';
 
 @Component({
   selector: 'app-carrito',
   imports: [
     FormsModule,
     RouterLink,
-    ModalComponent,
     PrecioCopPipe,
     LucideArrowLeft,
     LucideShoppingCart,
@@ -172,15 +172,15 @@ import { ModalComponent } from '../../shared/components/modal/modal.component';
               <div class="flex flex-col gap-3 px-6 py-5">
                 <div class="flex items-center justify-between text-sm">
                   <span class="text-brasa-muted">Subtotal</span>
-                  <span class="font-semibold text-brasa-black">{{ carrito.subtotal() | precioCop }}</span>
+                  <span class="font-semibold text-brasa-black">{{ carrito.resumen().subtotal | precioCop }}</span>
                 </div>
                 <div class="flex items-center justify-between text-sm">
                   <span class="text-brasa-muted">Descuento</span>
-                  <span class="font-semibold text-green-600">{{ carrito.descuento() | precioCop }}</span>
+                  <span class="font-semibold text-green-600">{{ carrito.resumen().descuento | precioCop }}</span>
                 </div>
                 <div class="flex items-center justify-between text-sm">
-                  <span class="text-brasa-muted">Impuestos ({{ (iva * 100).toFixed(0) }}%)</span>
-                  <span class="font-semibold text-brasa-black">{{ carrito.impuestos() | precioCop }}</span>
+                  <span class="text-brasa-muted">Impuestos ({{ porcentajeImpuesto() }}%)</span>
+                  <span class="font-semibold text-brasa-black">{{ carrito.resumen().impuestos | precioCop }}</span>
                 </div>
 
                 <div class="flex flex-col gap-2 pt-3">
@@ -205,7 +205,7 @@ import { ModalComponent } from '../../shared/components/modal/modal.component';
                 </div>
                 <div class="flex items-center justify-between text-sm">
                   <span class="text-brasa-muted">Propina</span>
-                  <span class="font-semibold text-brasa-black">{{ carrito.propina() | precioCop }}</span>
+                  <span class="font-semibold text-brasa-black">{{ carrito.resumen().propina | precioCop }}</span>
                 </div>
 
                 <div class="mt-2 flex items-center gap-2 rounded-xl border border-dashed border-brasa-border p-3">
@@ -232,15 +232,29 @@ import { ModalComponent } from '../../shared/components/modal/modal.component';
 
                 <div class="mt-3 flex items-center justify-between border-t border-brasa-border pt-4">
                   <span class="font-heading text-base font-semibold text-brasa-black">Total a pagar</span>
-                  <span class="font-heading text-2xl font-bold text-brasa-orange">
-                    {{ carrito.total() | precioCop }}
+                  <span class="font-heading text-2xl font-bold text-brasa-orange" aria-live="polite">
+                    {{ carrito.resumen().total | precioCop }}
                   </span>
                 </div>
+                @if (!carrito.cotizacion() && !carrito.estaVacio()) {
+                  <p class="text-xs text-brasa-muted" role="status">
+                    {{ carrito.errorCotizacion() || 'Calculando el total con el restaurante...' }}
+                  </p>
+                }
+                @if (!mesa.configurada()) {
+                  <p class="rounded-xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800" role="alert">
+                    Escanea el QR de tu mesa o elige "Para llevar" antes de enviar el pedido.
+                    <button type="button" class="ml-1 font-semibold underline" (click)="ui.abrirModalCambiarMesa()">Elegir ahora</button>
+                  </p>
+                }
+                @if (errorEnvio()) {
+                  <p class="rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-700" role="alert">{{ errorEnvio() }}</p>
+                }
 
                 <button
                   type="button"
                   class="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-brasa-orange px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-brasa-orange-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-brasa-orange focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-                  [disabled]="carrito.estaVacio() || enviando()"
+                  [disabled]="carrito.estaVacio() || enviando() || !mesa.configurada()"
                   (click)="enviarPedido()"
                 >
                   @if (enviando()) {
@@ -265,7 +279,7 @@ import { ModalComponent } from '../../shared/components/modal/modal.component';
                 <svg lucideInfo [size]="18"></svg>
               </span>
               <p class="text-sm text-brasa-muted">
-                Este envío es una demostración mientras no existe conexión con el sistema de cocina.
+                Tu pedido llega directo a la cocina. Podrás seguirlo en tiempo real y pagar desde tu celular cuando quieras.
               </p>
             </div>
           </div>
@@ -273,58 +287,26 @@ import { ModalComponent } from '../../shared/components/modal/modal.component';
       </div>
     </section>
 
-    @if (mostrarConfirmacion()) {
-      <app-modal titulo="Pedido enviado a cocina" anchoClase="max-w-md" (cerrar)="cerrarConfirmacion()">
-        <div class="flex flex-col items-center gap-4 px-6 py-8 text-center">
-          <span class="flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-green-600">
-            <svg lucideShoppingCart [size]="28"></svg>
-          </span>
-          <div>
-            <h3 class="font-heading text-xl font-semibold text-brasa-black">Pedido recibido</h3>
-            <p class="mt-1 text-sm text-brasa-muted">
-              Número de pedido: <strong>{{ pedidoGenerado() }}</strong>
-            </p>
-            @if (!pedidos.integracionActiva()) {
-              <p class="mt-2 text-xs text-brasa-muted">
-                Demostración: el pedido fue registrado localmente.
-              </p>
-            }
-          </div>
-          <div class="w-full rounded-xl border border-brasa-border bg-brasa-gray-light px-4 py-3 text-left">
-            <p class="text-sm font-semibold text-brasa-black">Tiempo estimado de entrega</p>
-            <p class="mt-1 text-sm text-brasa-muted">
-              {{ tiempoEstimado() }} minutos · {{ mesa.etiqueta() }}
-            </p>
-          </div>
-          <div class="flex w-full flex-col gap-2 sm:flex-row">
-            <a
-              routerLink="/menu"
-              class="flex-1 rounded-xl border border-brasa-border px-4 py-3 text-sm font-semibold text-brasa-black transition hover:bg-brasa-gray-light focus:outline-none focus-visible:ring-2 focus-visible:ring-brasa-orange"
-              (click)="cerrarConfirmacion()"
-            >
-              Ver carta y pedir más
-            </a>
-          </div>
-        </div>
-      </app-modal>
-    }
   `,
 })
 export class CarritoComponent {
   protected readonly carrito = inject(CarritoService);
   protected readonly mesa = inject(MesaService);
-  protected readonly pedidos = inject(PedidosService);
-  protected readonly notificaciones = inject(NotificacionesService);
+  protected readonly ui = inject(UiService);
+  private readonly pedidos = inject(PedidosService);
+  private readonly notificaciones = inject(NotificacionesService);
+  private readonly router = inject(Router);
 
   protected readonly notasCocina = signal('');
-  protected readonly cupon = signal('');
+  protected readonly cupon = signal(this.carrito.cupon() ?? '');
   protected readonly mensajeCupon = signal('');
   protected readonly enviando = signal(false);
-  protected readonly mostrarConfirmacion = signal(false);
-  protected readonly pedidoGenerado = signal('');
-  protected readonly tiempoEstimado = signal(0);
-  protected readonly iva = CONFIGURACION.iva;
+  protected readonly errorEnvio = signal('');
   protected readonly Math = Math;
+
+  protected readonly porcentajeImpuesto = computed(
+    () => this.carrito.cotizacion()?.impuestoPorcentaje ?? Math.round(CONFIGURACION.iva * 100),
+  );
 
   protected readonly opcionesPropina = [
     { label: 'Sin propina', value: 0 },
@@ -336,22 +318,12 @@ export class CarritoComponent {
 
   protected readonly porcentajePropina = computed(() => this.carrito.porcentajePropina());
 
-  constructor() {
-    this.carrito.establecerPropina(CONFIGURACION.propinaSugerida);
-  }
-
   protected descripcionPersonalizacion(item: ItemCarrito): string {
     const { tamano, extras, retirados } = item.personalizacion;
     const partes: string[] = [];
-    if (tamano) {
-      partes.push(tamano.nombre);
-    }
-    if (extras.length > 0) {
-      partes.push(extras.map((e) => e.nombre).join(', '));
-    }
-    if (retirados.length > 0) {
-      partes.push(`Sin ${retirados.join(', ').toLowerCase()}`);
-    }
+    if (tamano) partes.push(tamano.nombre);
+    if (extras.length > 0) partes.push(extras.map((e) => e.nombre).join(', '));
+    if (retirados.length > 0) partes.push(`Sin ${retirados.join(', ').toLowerCase()}`);
     return partes.join(' · ');
   }
 
@@ -359,53 +331,39 @@ export class CarritoComponent {
     this.carrito.establecerPropina(porcentaje);
   }
 
-  protected aplicarCupon(): void {
+  protected async aplicarCupon(): Promise<void> {
     const codigo = this.cupon().trim();
     if (codigo.length === 0) {
       this.mensajeCupon.set('Ingresa un código de cupón para aplicar.');
       return;
     }
-    if (this.carrito.aplicarCupon(codigo)) {
-      this.mensajeCupon.set(`Cupón ${this.carrito.cupon()} aplicado correctamente.`);
-    } else {
+    const error = await this.carrito.aplicarCupon(codigo);
+    if (error) {
       this.carrito.quitarCupon();
-      this.mensajeCupon.set('El cupón no es válido o está vencido.');
+      this.mensajeCupon.set(error);
+    } else {
+      this.mensajeCupon.set(`Cupón ${this.carrito.cupon()} aplicado correctamente.`);
     }
   }
 
-  protected enviarPedido(): void {
-    if (this.carrito.estaVacio()) {
+  /** Envía el pedido al servidor. Si falla, se informa y el carrito se conserva. */
+  protected async enviarPedido(): Promise<void> {
+    if (this.carrito.estaVacio() || this.enviando()) return;
+    if (!this.mesa.configurada()) {
+      this.ui.abrirModalCambiarMesa();
       return;
     }
     this.enviando.set(true);
-
-    setTimeout(async () => {
-      const pedido = await this.pedidos.crearPedido({
-        items: this.carrito.lineas(),
-        resumen: {
-          subtotal: this.carrito.subtotal(),
-          impuestos: this.carrito.impuestos(),
-          propina: this.carrito.propina(),
-          descuento: this.carrito.descuento(),
-          total: this.carrito.total(),
-        },
-        mesa: { tipo: this.mesa.tipo(), numero: this.mesa.numero() },
-        notasCocina: this.notasCocina().trim(),
-      });
-
-      this.tiempoEstimado.set(pedido.tiempoEstimadoMin);
-      this.pedidoGenerado.set(pedido.numero);
+    this.errorEnvio.set('');
+    try {
+      const pedido = await this.pedidos.enviarCarrito(this.notasCocina());
+      this.notificaciones.mostrar(`Pedido ${pedido.numero} enviado a cocina`);
+      this.router.navigate(['/pedido', pedido.id]);
+    } catch (error) {
+      this.errorEnvio.set(mensajeError(error, 'No se pudo enviar el pedido. Tu carrito sigue guardado.'));
+      this.notificaciones.mostrar('No se pudo enviar el pedido', 'error');
+    } finally {
       this.enviando.set(false);
-      this.carrito.limpiar();
-      this.mostrarConfirmacion.set(true);
-      this.notificaciones.mostrar('Pedido enviado a cocina');
-    }, 400);
-  }
-
-  protected cerrarConfirmacion(): void {
-    this.mostrarConfirmacion.set(false);
-    this.cupon.set('');
-    this.mensajeCupon.set('');
-    this.notasCocina.set('');
+    }
   }
 }

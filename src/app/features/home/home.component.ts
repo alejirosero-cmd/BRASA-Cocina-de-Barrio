@@ -1,4 +1,5 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
+import { mensajeError } from '../../core/services/api.service';
 import { Router } from '@angular/router';
 import { MesaService } from '../../core/services/mesa.service';
 import { NotificacionesService } from '../../core/services/notificaciones.service';
@@ -39,7 +40,7 @@ interface Beneficio {
           </h1>
 
           <p class="mt-5 max-w-xl text-base leading-relaxed text-brasa-muted sm:text-lg">
-            Escanea el código QR de tu mesa o selecciona tu menú. Arma tu pedido, personalízalo y
+            Escanea el código QR de tu mesa o pide para llevar. Arma tu pedido, personalízalo y
             envíalo a cocina en pocos toques.
           </p>
 
@@ -88,8 +89,13 @@ interface Beneficio {
             @if (tipo() === 'mesa') {
               <div class="mt-4">
                 <label for="mesa-inicio" class="mb-1.5 block text-sm font-medium text-brasa-black">
-                  Número de mesa
+                  Código de tu mesa
                 </label>
+                @if (mesaActual()) {
+                  <p class="mb-2 rounded-xl bg-green-50 px-3 py-2 text-xs font-medium text-green-700">
+                    Ya estás en la {{ mesaActual() }}. Puedes ver el menú o escribir otro código.
+                  </p>
+                }
                 <div class="flex gap-3">
                   <div
                     class="flex flex-1 items-center gap-3 rounded-xl border border-brasa-border px-4 py-3 transition focus-within:border-brasa-orange focus-within:ring-2 focus-within:ring-brasa-orange/30"
@@ -100,16 +106,20 @@ interface Beneficio {
                     </svg>
                     <input
                       id="mesa-inicio"
-                      type="number"
-                      min="1"
-                      inputmode="numeric"
-                      class="w-full bg-transparent text-sm font-medium text-brasa-black outline-none"
-                      [value]="numero() ?? ''"
-                      (input)="actualizarNumero($event)"
-                      placeholder="Ej. 4"
+                      type="text"
+                      autocomplete="off"
+                      autocapitalize="characters"
+                      maxlength="12"
+                      aria-describedby="ayuda-mesa-inicio"
+                      class="w-full bg-transparent text-sm font-medium uppercase tracking-widest text-brasa-black outline-none"
+                      [value]="codigo()"
+                      (input)="actualizarCodigo($event)"
+                      (keydown.enter)="verMenu()"
+                      placeholder="Ej. K7P2QXMA"
                     />
                   </div>
                 </div>
+                <p id="ayuda-mesa-inicio" class="mt-2 text-xs text-brasa-muted">Escanea el QR de tu mesa o escribe el código impreso debajo de él.</p>
                 @if (error()) {
                   <p class="mt-2 text-xs font-medium text-red-600" role="alert">{{ error() }}</p>
                 }
@@ -126,9 +136,10 @@ interface Beneficio {
             <button
               type="button"
               class="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-brasa-orange px-6 py-4 font-heading text-base font-semibold text-white shadow-soft transition hover:bg-brasa-orange-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-brasa-orange focus-visible:ring-offset-2"
+              [disabled]="validando()"
               (click)="verMenu()"
             >
-              Ver Menú
+              {{ validando() ? 'Validando mesa...' : 'Ver Menú' }}
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M5 12h14M12 5l7 7-7 7" />
               </svg>
@@ -270,37 +281,48 @@ export class HomeComponent {
     },
   ];
 
-  protected readonly tipo = signal<TipoPedido>('mesa');
-  protected readonly numero = signal<number | null>(null);
+  protected readonly tipo = signal<TipoPedido>(this.mesa.tipo());
+  protected readonly codigo = signal('');
   protected readonly error = signal('');
-
-  constructor() {
-    this.tipo.set(this.mesa.tipo());
-    this.numero.set(this.mesa.numero());
-  }
+  protected readonly validando = signal(false);
+  protected readonly mesaActual = computed(() => (this.mesa.codigo() ? this.mesa.etiqueta() : null));
 
   protected seleccionarTipo(tipo: TipoPedido): void {
     this.tipo.set(tipo);
     this.error.set('');
   }
 
-  protected actualizarNumero(evento: Event): void {
-    const valor = (evento.target as HTMLInputElement).value;
-    this.numero.set(valor === '' ? null : Number(valor));
+  protected actualizarCodigo(evento: Event): void {
+    this.codigo.set((evento.target as HTMLInputElement).value.trim().toUpperCase());
     this.error.set('');
   }
 
-  protected verMenu(): void {
-    if (this.tipo() === 'mesa' && (!this.numero() || this.numero()! <= 0)) {
-      this.error.set('Ingresa un número de mesa válido para continuar.');
+  protected async verMenu(): Promise<void> {
+    if (this.tipo() === 'llevar') {
+      this.mesa.paraLlevar();
+      this.irAlMenu();
       return;
     }
-
-    this.mesa.establecerTipo(this.tipo());
-    if (this.tipo() === 'mesa') {
-      this.mesa.establecerMesa(this.numero());
+    if (!this.codigo() && this.mesa.codigo()) {
+      this.irAlMenu();
+      return;
     }
+    if (!/^[A-Z0-9]{6,12}$/.test(this.codigo())) {
+      this.error.set('Escanea el QR de tu mesa o escribe el código impreso debajo de él.');
+      return;
+    }
+    this.validando.set(true);
+    try {
+      await this.mesa.usarCodigo(this.codigo());
+      this.irAlMenu();
+    } catch (e) {
+      this.error.set(mensajeError(e, 'No pudimos validar el código de la mesa.'));
+    } finally {
+      this.validando.set(false);
+    }
+  }
 
+  private irAlMenu(): void {
     this.notificaciones.mostrar(`Pedido configurado: ${this.mesa.etiqueta()}`);
     this.router.navigate(['/menu']);
   }

@@ -63,3 +63,11 @@ export class DatosFacturaDto {
   /** Autorización de tratamiento de datos personales (Ley 1581 de 2012). */
   @IsBoolean() aceptaTratamientoDatos: boolean;
 }
+
+export class CotizarPedidoDto {
+  @IsArray() @ArrayMinSize(1, { message: 'El pedido está vacío' }) @ArrayMaxSize(ITEMS_MAX_POR_PEDIDO)
+  @ValidateNested({ each: true }) @Type(() => ItemPedidoDto)
+  items: ItemPedidoDto[];
+  @IsOptional() @Transform(recortar) @IsString() @MaxLength(30) cupon?: string;
+  @IsOptional() @IsInt() @Min(0) @Max(100) propinaPorcentaje?: number;
+}

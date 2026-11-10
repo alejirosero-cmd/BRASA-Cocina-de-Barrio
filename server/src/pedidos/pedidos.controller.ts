@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Headers,
+  HttpCode,
   MessageEvent,
   Param,
   Patch,
@@ -17,7 +18,7 @@ import { ESTADOS_PEDIDO } from '../common/dominio';
 import { EventosService } from '../common/eventos.service';
 import { leerJson } from '../common/seguridad';
 import { PrismaService } from '../prisma/prisma.service';
-import { CambiarEstadoDto, CrearPedidoDto, DatosFacturaDto, PropinaDto } from './dto';
+import { CambiarEstadoDto, CotizarPedidoDto, CrearPedidoDto, DatosFacturaDto, PropinaDto } from './dto';
 import { PedidosService, serializarPedido } from './pedidos.service';
 
 /** Mantiene viva la conexión SSE a través de proxies. */
@@ -43,6 +44,15 @@ export class PedidosController {
   @Post()
   crear(@Body() dto: CrearPedidoDto, @UsuarioActual() usuario: UsuarioAutenticado | null) {
     return this.pedidos.crear(dto, usuario);
+  }
+
+  /** Total calculado por el servidor para mostrar en el carrito (no crea nada ni gasta el cupón). */
+  @Publico()
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @HttpCode(200)
+  @Post('cotizar')
+  cotizar(@Body() dto: CotizarPedidoDto) {
+    return this.pedidos.cotizar(dto);
   }
 
   @Roles('ADMIN', 'MESERO', 'COCINA')

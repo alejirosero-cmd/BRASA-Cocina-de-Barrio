@@ -7,6 +7,7 @@ import {
   SolicitudesMeseroService,
 } from '../../../core/services/solicitudes-mesero.service';
 import { MotivoSolicitud } from '../../../models/pedido.model';
+import { mensajeError } from '../../../core/services/api.service';
 
 @Component({
   selector: 'app-llamar-mesero',
@@ -24,11 +25,6 @@ import { MotivoSolicitud } from '../../../models/pedido.model';
               </span>
               <h3 class="font-heading text-lg font-semibold text-brasa-black">Solicitud enviada</h3>
               <p class="max-w-sm text-sm text-brasa-muted">{{ confirmacion() }}</p>
-              @if (!solicitudes.integracionActiva()) {
-                <p class="rounded-lg bg-brasa-gray-light px-4 py-2 text-xs text-brasa-muted">
-                  Demostración: aún no hay conexión con el sistema del restaurante.
-                </p>
-              }
               <button
                 type="button"
                 class="mt-2 rounded-xl bg-brasa-orange px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-brasa-orange-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-brasa-orange focus-visible:ring-offset-2"
@@ -42,12 +38,22 @@ import { MotivoSolicitud } from '../../../models/pedido.model';
               ¿En qué te podemos ayudar?
               <span class="font-medium text-brasa-black">{{ mesa.etiqueta() }}</span>
             </p>
+            @if (!solicitudes.puedeSolicitar()) {
+              <p class="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800" role="alert">
+                Para llamar al mesero, primero escanea el QR de tu mesa.
+                <button type="button" class="ml-1 font-semibold underline" (click)="cerrar(); ui.abrirModalCambiarMesa()">Escanear o escribir código</button>
+              </p>
+            }
+            @if (error()) {
+              <p class="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{{ error() }}</p>
+            }
 
             <div class="space-y-3">
               @for (motivo of motivos; track motivo.id) {
                 <button
                   type="button"
-                  class="flex w-full items-center gap-4 rounded-xl border border-brasa-border p-4 text-left transition hover:border-brasa-orange hover:bg-brasa-orange/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brasa-orange"
+                  class="flex w-full items-center gap-4 rounded-xl border border-brasa-border p-4 text-left transition hover:border-brasa-orange hover:bg-brasa-orange/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brasa-orange disabled:cursor-not-allowed disabled:opacity-50"
+                  [disabled]="enviando() || !solicitudes.puedeSolicitar()"
                   (click)="enviar(motivo.id)"
                 >
                   <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brasa-orange/10 text-brasa-orange">
@@ -94,20 +100,33 @@ export class LlamarMeseroComponent {
   protected readonly motivos = MOTIVOS_SOLICITUD;
 
   protected readonly confirmacion = signal('');
+  protected readonly error = signal('');
+  protected readonly enviando = signal(false);
 
-  protected enviar(motivo: MotivoSolicitud): void {
-    this.solicitudes.enviarSolicitud(motivo, this.mesa.numero(), this.mesa.tipo());
-    const titulo = MOTIVOS_SOLICITUD.find((m) => m.id === motivo)?.titulo ?? 'Solicitud';
-    const destino = this.mesa.esParaLlevar()
-      ? 'en el mostrador'
-      : `en la ${this.mesa.etiqueta().toLowerCase()}`;
-    this.confirmacion.set(
-      `Registramos tu solicitud: "${titulo}". Un mesero te atenderá ${destino}.`,
-    );
+  /** La solicitud llega a la pantalla de meseros en tiempo real. */
+  protected async enviar(motivo: MotivoSolicitud): Promise<void> {
+    if (this.enviando() || !this.solicitudes.puedeSolicitar()) return;
+    this.enviando.set(true);
+    this.error.set('');
+    try {
+      const solicitud = await this.solicitudes.enviar(motivo);
+      const titulo = MOTIVOS_SOLICITUD.find((m) => m.id === motivo)?.titulo ?? 'Solicitud';
+      const destino = solicitud.mesa ? `en la mesa ${solicitud.mesa}` : 'en el mostrador';
+      this.confirmacion.set(
+        solicitud.repetida
+          ? `Ya teníamos tu solicitud "${titulo}". Un mesero va en camino ${destino}.`
+          : `Registramos tu solicitud: "${titulo}". Un mesero te atenderá ${destino}.`,
+      );
+    } catch (e) {
+      this.error.set(mensajeError(e, 'No se pudo enviar la solicitud. Intenta de nuevo.'));
+    } finally {
+      this.enviando.set(false);
+    }
   }
 
   protected cerrar(): void {
     this.confirmacion.set('');
+    this.error.set('');
     this.ui.cerrarModalMesero();
   }
 }

@@ -1,3 +1,7 @@
+/**
+ * @deprecated Sin uso desde la fase 2: el historial ahora viene del servidor (PedidosService.historial()).
+ * Se conserva hasta que se autorice eliminarlo.
+ */
 import { Injectable, signal } from '@angular/core';
 import { Pedido } from './pedidos.service';
 

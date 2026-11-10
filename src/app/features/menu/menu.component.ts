@@ -136,9 +136,14 @@ import { FavoritosService } from '../../core/services/favoritos.service';
               </p>
             </div>
             @if (productos.cargando()) {
-              <span class="text-xs text-brasa-muted">Actualizando menú...</span>
+              <span class="text-xs text-brasa-muted" role="status">Actualizando menú...</span>
             }
           </div>
+          @if (productos.error()) {
+            <p class="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" role="alert">
+              {{ productos.error() }}
+            </p>
+          }
 
           @if (productosMostrados().length === 0) {
             <div class="mt-6 flex flex-col items-center gap-3 rounded-2xl border border-dashed border-brasa-border px-6 py-16 text-center">

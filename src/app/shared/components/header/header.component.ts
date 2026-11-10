@@ -1,4 +1,5 @@
-import { Component, inject } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
+import { AuthService } from '../../../core/services/auth.service';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { LogoBrasaComponent } from '../logo-brasa/logo-brasa.component';
 import { MesaService } from '../../../core/services/mesa.service';
@@ -29,12 +30,24 @@ import { PedidosService } from '../../../core/services/pedidos.service';
           >
             Seguimiento
             @if (pedidos.hayPedidoActivo()) {
-              <span class="ml-1.5 inline-flex h-2 w-2 rounded-full bg-brasa-orange"></span>
+              <span class="ml-1.5 inline-flex h-2 w-2 rounded-full bg-brasa-orange" aria-label="pedido en curso"></span>
             }
           </a>
+          <a routerLink="/historial" routerLinkActive="bg-brasa-gray-light text-brasa-black" class="rounded-lg px-4 py-2 text-sm font-medium text-brasa-muted transition hover:text-brasa-black">Mis pedidos</a>
+          @for (enlace of enlacesPersonal(); track enlace.ruta) {
+            <a [routerLink]="enlace.ruta" routerLinkActive="bg-brasa-gray-light text-brasa-black" class="rounded-lg px-4 py-2 text-sm font-semibold text-brasa-orange transition hover:text-brasa-orange-dark">{{ enlace.titulo }}</a>
+          }
         </nav>
 
         <div class="flex items-center gap-2 md:gap-3">
+          @if (auth.autenticado()) {
+            <a routerLink="/cuenta" class="hidden rounded-xl px-3 py-2 text-sm font-medium text-brasa-muted transition hover:text-brasa-black md:inline" [attr.aria-label]="'Mi cuenta, ' + auth.usuario()?.nombre">
+              {{ auth.usuario()?.nombre }}
+            </a>
+          } @else {
+            <a routerLink="/login" class="hidden rounded-xl px-3 py-2 text-sm font-medium text-brasa-muted transition hover:text-brasa-black md:inline">Ingresar</a>
+          }
+          @if (!auth.esPersonal()) {
           <div
             class="hidden items-center gap-2 rounded-xl border border-brasa-border bg-brasa-gray-light px-3 py-2 sm:flex"
             [attr.aria-label]="'Ubicación actual: ' + mesa.etiqueta()"
@@ -73,6 +86,7 @@ import { PedidosService } from '../../../core/services/pedidos.service';
               </span>
             }
           </a>
+          }
         </div>
       </div>
     </header>
@@ -83,4 +97,15 @@ export class SiteHeaderComponent {
   protected readonly carrito = inject(CarritoService);
   protected readonly ui = inject(UiService);
   protected readonly pedidos = inject(PedidosService);
+  protected readonly auth = inject(AuthService);
+
+  /** Accesos del personal (el servidor valida igualmente cada acción). */
+  protected readonly enlacesPersonal = computed(() => {
+    const rol = this.auth.rol();
+    const enlaces: { ruta: string; titulo: string }[] = [];
+    if (rol === 'COCINA' || rol === 'ADMIN') enlaces.push({ ruta: '/cocina', titulo: 'Cocina' });
+    if (rol === 'MESERO' || rol === 'ADMIN') enlaces.push({ ruta: '/mesero', titulo: 'Meseros' });
+    if (rol === 'ADMIN') enlaces.push({ ruta: '/admin', titulo: 'Admin' });
+    return enlaces;
+  });
 }

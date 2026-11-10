@@ -58,6 +58,34 @@ html {
   scroll-behavior: smooth;
 }
 
+/* Foco visible y consistente para navegación con teclado. */
+:focus-visible {
+  outline: 2px solid var(--color-brasa-orange);
+  outline-offset: 2px;
+}
+
+/* Quien pide menos movimiento en su sistema no ve animaciones ni desplazamientos suaves. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media print {
+  header,
+  app-boton-mesero,
+  app-notificaciones {
+    display: none !important;
+  }
+}
+
 body {
   font-family: var(--font-sans);
   background-color: #ffffff;

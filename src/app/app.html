@@ -1,10 +1,16 @@
+<a href="#contenido" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[60] focus:rounded-xl focus:bg-brasa-black focus:px-4 focus:py-2 focus:text-white">
+  Saltar al contenido
+</a>
+
 <app-site-header />
 
-<main>
+<main id="contenido" tabindex="-1">
   <router-outlet />
 </main>
 
-<app-boton-mesero />
-<app-llamar-mesero />
-<app-cambiar-mesa />
+@if (!auth.esPersonal()) {
+  <app-boton-mesero />
+  <app-llamar-mesero />
+  <app-cambiar-mesa />
+}
 <app-notificaciones />
