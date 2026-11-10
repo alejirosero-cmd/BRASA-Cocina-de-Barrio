@@ -1,0 +1,269 @@
+// Esquema de datos de BRASA – Cocina de Barrio.
+// Base de datos: SQLite (archivo local). Los montos se guardan en pesos colombianos enteros (COP).
+// Los valores "enumerados" se guardan como String y se validan en la capa de aplicación
+// (ver src/common/dominio.ts), porque SQLite no tiene tipos enum nativos.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Usuario {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  nombre       String
+  passwordHash String
+  /// ADMIN | CLIENTE | MESERO | COCINA
+  rol          String   @default("CLIENTE")
+  activo       Boolean  @default(true)
+  /// Se incrementa al cambiar la contraseña o el rol: invalida los JWT emitidos antes.
+  versionSesion Int     @default(0)
+  creadoEn     DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  tokensRecuperacion TokenRecuperacion[]
+  pedidos            Pedido[]            @relation("PedidosCliente")
+  eventosPedido      EventoPedido[]
+  solicitudesAtendidas SolicitudMesero[]
+  auditoria          RegistroAuditoria[]
+
+  @@index([rol])
+}
+
+model TokenRecuperacion {
+  id        String    @id @default(cuid())
+  usuarioId String
+  /// Hash SHA-256 del token; el token en claro solo viaja en el enlace enviado al usuario.
+  tokenHash String    @unique
+  expiraEn  DateTime
+  usadoEn   DateTime?
+  creadoEn  DateTime  @default(now())
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+}
+
+model Categoria {
+  id        String     @id @default(cuid())
+  slug      String     @unique
+  nombre    String
+  orden     Int        @default(0)
+  activa    Boolean    @default(true)
+  productos Producto[]
+}
+
+model Producto {
+  id                   String   @id @default(cuid())
+  slug                 String   @unique
+  nombre               String
+  descripcion          String
+  precio               Int
+  categoriaId          String
+  imagenUrl            String
+  /// JSON: string[]
+  etiquetas            String   @default("[]")
+  /// JSON: string[]
+  ingredientes         String   @default("[]")
+  /// JSON: { id, nombre, diferenciaPrecio }[]
+  tamanos              String   @default("[]")
+  /// JSON: { id, nombre, precio }[]
+  extras               String   @default("[]")
+  /// JSON: { id, nombre, precio }[]
+  salsas               String   @default("[]")
+  /// JSON: { id, nombre }[]
+  retirables           String   @default("[]")
+  tiempoPreparacionMin Int      @default(15)
+  disponible           Boolean  @default(true)
+  creadoEn             DateTime @default(now())
+  actualizadoEn        DateTime @updatedAt
+
+  categoria Categoria    @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
+  items     PedidoItem[]
+
+  @@index([categoriaId])
+  @@index([disponible])
+}
+
+model Mesa {
+  id       String   @id @default(cuid())
+  numero   Int      @unique
+  /// Código aleatorio impreso en el QR (y debajo de él) que identifica la mesa.
+  codigo   String   @unique
+  activa   Boolean  @default(true)
+  creadoEn DateTime @default(now())
+
+  pedidos     Pedido[]
+  solicitudes SolicitudMesero[]
+}
+
+model Cupon {
+  codigo     String    @id
+  porcentaje Int
+  activo     Boolean   @default(true)
+  usosMax    Int?
+  usos       Int       @default(0)
+  venceEn    DateTime?
+  pedidos    Pedido[]
+}
+
+model Pedido {
+  id                String   @id @default(cuid())
+  numero            Int      @unique
+  /// mesa | llevar
+  tipo              String
+  mesaId            String?
+  clienteId         String?
+  /// PENDIENTE | CONFIRMADO | EN_PREPARACION | LISTO | ENTREGADO | CANCELADO
+  estado            String   @default("PENDIENTE")
+  /// PENDIENTE | PARCIAL | PAGADO | REEMBOLSADO
+  estadoPago        String   @default("PENDIENTE")
+  subtotal          Int
+  descuento         Int      @default(0)
+  impuestos         Int
+  propinaPorcentaje Int      @default(0)
+  propina           Int      @default(0)
+  total             Int
+  cuponCodigo       String?
+  notasCocina       String   @default("")
+  tiempoEstimadoMin Int
+  /// Hash SHA-256 del token que permite al cliente anónimo consultar su pedido.
+  tokenSeguimientoHash String @unique
+  /// Datos de facturación electrónica (JSON) si el cliente la solicitó.
+  datosFactura      String?
+  motivoCancelacion String?
+  creadoEn          DateTime @default(now())
+  actualizadoEn     DateTime @updatedAt
+
+  mesa         Mesa?          @relation(fields: [mesaId], references: [id], onDelete: SetNull)
+  cliente      Usuario?       @relation("PedidosCliente", fields: [clienteId], references: [id], onDelete: SetNull)
+  cupon        Cupon?         @relation(fields: [cuponCodigo], references: [codigo], onDelete: SetNull)
+  items        PedidoItem[]
+  eventos      EventoPedido[]
+  pagos        Pago[]
+  calificacion Calificacion?
+
+  @@index([estado])
+  @@index([creadoEn])
+  @@index([clienteId])
+  @@index([mesaId])
+}
+
+model PedidoItem {
+  id             String @id @default(cuid())
+  pedidoId       String
+  productoId     String
+  /// Copia del nombre y del precio al momento de la compra (no cambian si luego se edita el menú).
+  nombre         String
+  precioUnitario Int
+  cantidad       Int
+  /// JSON con la personalización validada por el servidor.
+  personalizacion String
+
+  pedido   Pedido   @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  producto Producto @relation(fields: [productoId], references: [id], onDelete: Restrict)
+
+  @@index([pedidoId])
+  @@index([productoId])
+}
+
+model EventoPedido {
+  id       String   @id @default(cuid())
+  pedidoId String
+  estado   String
+  actorId  String?
+  nota     String?
+  creadoEn DateTime @default(now())
+
+  pedido Pedido   @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  actor  Usuario? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([pedidoId])
+}
+
+model SolicitudMesero {
+  id            String    @id @default(cuid())
+  mesaId        String?
+  /// cuenta | utensilios | ayuda
+  motivo        String
+  /// PENDIENTE | ATENDIDA
+  estado        String    @default("PENDIENTE")
+  atendidaPorId String?
+  creadoEn      DateTime  @default(now())
+  atendidaEn    DateTime?
+
+  mesa        Mesa?    @relation(fields: [mesaId], references: [id], onDelete: SetNull)
+  atendidaPor Usuario? @relation(fields: [atendidaPorId], references: [id], onDelete: SetNull)
+
+  @@index([estado])
+}
+
+model Pago {
+  id         String   @id @default(cuid())
+  pedidoId   String
+  /// wompi | simulado | efectivo
+  proveedor  String
+  /// Referencia única enviada al proveedor (clave de idempotencia).
+  referencia String   @unique
+  monto      Int
+  moneda     String   @default("COP")
+  /// PENDIENTE | APROBADO | RECHAZADO | ANULADO | ERROR | REEMBOLSO_SOLICITADO | REEMBOLSADO
+  estado     String   @default("PENDIENTE")
+  transaccionProveedorId String? @unique
+  metodo     String?
+  registradoPorId String?
+  creadoEn   DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  pedido  Pedido       @relation(fields: [pedidoId], references: [id], onDelete: Restrict)
+  eventos EventoPago[]
+
+  @@index([pedidoId])
+  @@index([estado])
+}
+
+model EventoPago {
+  id        String   @id @default(cuid())
+  pagoId    String?
+  /// Identificador único del evento del proveedor: evita procesar dos veces la misma notificación.
+  claveIdempotencia String @unique
+  tipo      String
+  estadoReportado String
+  firmaValida Boolean
+  payload   String
+  creadoEn  DateTime @default(now())
+
+  pago Pago? @relation(fields: [pagoId], references: [id], onDelete: SetNull)
+
+  @@index([pagoId])
+}
+
+model Calificacion {
+  id         String   @id @default(cuid())
+  /// Un pedido solo puede calificarse una vez.
+  pedidoId   String   @unique
+  estrellas  Int
+  comentario String   @default("")
+  creadoEn   DateTime @default(now())
+
+  pedido Pedido @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+}
+
+model RegistroAuditoria {
+  id        String   @id @default(cuid())
+  actorId   String?
+  accion    String
+  entidad   String
+  entidadId String?
+  detalle   String?
+  creadoEn  DateTime @default(now())
+
+  actor Usuario? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entidad, entidadId])
+  @@index([creadoEn])
+}
