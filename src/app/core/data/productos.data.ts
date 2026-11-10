@@ -17,7 +17,7 @@ export const PRODUCTOS: Producto[] = [
       'Carne de res 150 g a la parrilla, queso cheddar fundido, lechuga, tomate y salsa de la casa.',
     precio: 18900,
     categoria: 'hamburguesas',
-    imagenUrl: 'img/platillo-hamburguesa.svg',
+    imagenUrl: 'img/brasa-original.jpg',
     etiquetas: ['mas-vendido'],
     ingredientes: ['Carne de res', 'Queso cheddar', 'Lechuga', 'Tomate', 'Salsa de la casa'],
     tamanos: [
@@ -48,7 +48,7 @@ export const PRODUCTOS: Producto[] = [
       'Brasa Original acompañada de papas de la casa y limonada natural. La opción completa.',
     precio: 18900,
     categoria: 'hamburguesas',
-    imagenUrl: 'img/platillo-hamburguesa.svg',
+    imagenUrl: 'img/combo-brasa.jpg',
     etiquetas: ['mas-vendido'],
     ingredientes: ['Brasa Original', 'Papas de la casa', 'Limonada natural'],
     tamanos: [
@@ -73,7 +73,7 @@ export const PRODUCTOS: Producto[] = [
       'Medallón de garbanzo y quinua, aguacate, tomate, lechuga y alioli de hierbas. Vegetariana.',
     precio: 19900,
     categoria: 'hamburguesas',
-    imagenUrl: 'img/platillo-veggie.svg',
+    imagenUrl: 'img/verde-de-verdad.jpg',
     etiquetas: ['vegetariano'],
     ingredientes: ['Medallón de garbanzo', 'Quinua', 'Aguacate', 'Tomate', 'Alioli de hierbas'],
     tamanos: [
@@ -101,7 +101,7 @@ export const PRODUCTOS: Producto[] = [
       'Filete de pollo empanizado crocante, queso, lechuga y salsa especial de la casa.',
     precio: 21900,
     categoria: 'hamburguesas',
-    imagenUrl: 'img/platillo-pollo.svg',
+    imagenUrl: 'img/pollo-crocante.jpg',
     etiquetas: [],
     ingredientes: ['Pollo empanizado', 'Queso', 'Lechuga', 'Salsa especial'],
     tamanos: [
@@ -128,7 +128,7 @@ export const PRODUCTOS: Producto[] = [
     descripcion: 'Papas fritas naturales con sal marina y nuestra mezcla de especias.',
     precio: 6900,
     categoria: 'acompanamientos',
-    imagenUrl: 'img/platillo-papas.svg',
+    imagenUrl: 'img/papas-de-la-casa.jpg',
     etiquetas: ['vegetariano', 'sin-gluten'],
     ingredientes: ['Papas', 'Sal marina', 'Especias de la casa'],
     tamanos: [
@@ -152,7 +152,7 @@ export const PRODUCTOS: Producto[] = [
     descripcion: 'Limonada recién hecha, endulzada al gusto y servida bien fría.',
     precio: 7000,
     categoria: 'bebidas',
-    imagenUrl: 'img/platillo-bebida.svg',
+    imagenUrl: 'img/limonada-natural.jpg',
     etiquetas: ['vegetariano', 'sin-gluten'],
     ingredientes: ['Limón', 'Agua', 'Azúcar'],
     tamanos: [
@@ -173,7 +173,7 @@ export const PRODUCTOS: Producto[] = [
     descripcion: 'Malteada cremosa de vainilla con crema batida y topping de la casa.',
     precio: 12900,
     categoria: 'bebidas',
-    imagenUrl: 'img/platillo-malteada.svg',
+    imagenUrl: 'img/malteada-vainilla.jpg',
     etiquetas: ['vegetariano'],
     ingredientes: ['Helado de vainilla', 'Leche', 'Crema batida'],
     tamanos: [
@@ -194,7 +194,7 @@ export const PRODUCTOS: Producto[] = [
     descripcion: 'Brownie tibio de chocolate con bola de helado de vainilla y salsa de chocolate.',
     precio: 10900,
     categoria: 'postres',
-    imagenUrl: 'img/platillo-postre.svg',
+    imagenUrl: 'img/brownie-con-helado.jpg',
     etiquetas: ['vegetariano', 'mas-vendido'],
     ingredientes: ['Brownie de chocolate', 'Helado de vainilla', 'Salsa de chocolate'],
     tamanos: [{ id: 'unico', nombre: 'Porción', diferenciaPrecio: 0 }],

@@ -64,6 +64,14 @@ async function main() {
       },
     });
   }
+  // Las ilustraciones originales (.svg) se reemplazan por fotografías; las imágenes que el
+  // administrador haya cambiado no se tocan.
+  for (const p of PRODUCTOS) {
+    await prisma.producto.updateMany({
+      where: { slug: p.id, imagenUrl: { endsWith: '.svg' } },
+      data: { imagenUrl: p.imagenUrl },
+    });
+  }
   console.log(`  ${categorias.length} categorías y ${PRODUCTOS.length} productos`);
 
   for (let numero = 1; numero <= 12; numero++) {

@@ -153,7 +153,7 @@ interface Beneficio {
               class="overflow-hidden rounded-3xl border border-brasa-border bg-white shadow-soft"
             >
               <img
-                src="img/hero-burger.svg"
+                src="img/hero-hamburguesa.jpg"
                 alt="Hamburguesa BRASA acompañada de papas de la casa"
                 width="900"
                 height="720"

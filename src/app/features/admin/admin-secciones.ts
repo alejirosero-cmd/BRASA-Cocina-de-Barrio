@@ -331,7 +331,7 @@ interface CategoriaAdmin { id: string; nombre: string; orden: number; activa: bo
 type ProductoAdmin = Producto & { disponible: boolean };
 
 const PRODUCTO_VACIO = {
-  id: '', nombre: '', descripcion: '', precio: 0, categoria: '', imagenUrl: 'img/platillo-hamburguesa.svg',
+  id: '', nombre: '', descripcion: '', precio: 0, categoria: '', imagenUrl: 'img/brasa-original.jpg',
   etiquetas: [] as string[], ingredientes: [] as string[], tamanos: [] as unknown[], extras: [] as unknown[],
   salsas: [] as unknown[], retirables: [] as unknown[], tiempoPreparacionMin: 15, disponible: true,
 };
