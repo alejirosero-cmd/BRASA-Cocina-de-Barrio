@@ -1,0 +1,96 @@
+# Pipeline de integración y entrega continua de BRASA – Cocina de Barrio.
+#
+#   pruebas       → pruebas del backend (Django + PostgreSQL real) y del frontend (Angular + Vitest)
+#   construccion  → compilación de producción del frontend (artefacto descargable)
+#   imagenes      → imágenes Docker publicadas en el Container Registry de GitLab (solo en main)
+#
+# Se ejecuta en cada push y en cada merge request.
+
+stages:
+  - pruebas
+  - construccion
+  - imagenes
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  npm_config_cache: "$CI_PROJECT_DIR/.cache/npm"
+
+# ------------------------------------------------------------------ plantillas
+.node:
+  image: node:24-alpine
+  cache:
+    key:
+      files: [package-lock.json]
+    paths: [.cache/npm]
+  before_script:
+    - npm ci --no-audit --no-fund
+
+# ------------------------------------------------------------------ pruebas
+backend:pruebas:
+  stage: pruebas
+  image: python:3.14-slim
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_DB: brasa
+    POSTGRES_USER: brasa
+    POSTGRES_PASSWORD: brasa-ci
+    DATABASE_URL: postgres://brasa:brasa-ci@postgres:5432/brasa
+    ENTORNO: pruebas
+    PAGOS_PROVEEDOR: simulado
+  cache:
+    key:
+      files: [backend/requirements.txt]
+    paths: [.cache/pip]
+  before_script:
+    - cd backend
+    - pip install -r requirements.txt
+    # Secretos de un solo uso para la ejecución (no se guardan en el repositorio).
+    - export DJANGO_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+    - export JWT_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+  script:
+    - python manage.py check
+    - python manage.py makemigrations --check --dry-run   # falla si falta alguna migración
+    - python manage.py test --verbosity 2
+
+frontend:pruebas:
+  stage: pruebas
+  extends: .node
+  script:
+    - npx ng test --watch=false
+
+# ------------------------------------------------------------------ construcción
+frontend:build:
+  stage: construccion
+  extends: .node
+  script:
+    - npx ng build --configuration production
+  artifacts:
+    name: "brasa-web-$CI_COMMIT_SHORT_SHA"
+    paths: [dist/brasa-cocina-de-barrio/browser]
+    expire_in: 1 week
+
+# ------------------------------------------------------------------ imágenes Docker
+imagenes:docker:
+  stage: imagenes
+  image: docker:29
+  services:
+    - docker:29-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    - docker build -t "$CI_REGISTRY_IMAGE/backend:$CI_COMMIT_SHORT_SHA" -t "$CI_REGISTRY_IMAGE/backend:latest" backend
+    - docker build -t "$CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_SHORT_SHA" -t "$CI_REGISTRY_IMAGE/frontend:latest" .
+    - docker push --all-tags "$CI_REGISTRY_IMAGE/backend"
+    - docker push --all-tags "$CI_REGISTRY_IMAGE/frontend"
