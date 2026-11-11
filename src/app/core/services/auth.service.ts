@@ -22,6 +22,7 @@ interface Sesion {
  * pestañas. Los permisos reales los valida siempre el servidor; aquí solo se adapta la interfaz.
  */
 const CLAVE = 'brasa.sesion';
+const CLAVE_ORIGEN = 'brasa.sesion.origen';
 
 /** Pantalla de inicio de cada rol después de iniciar sesión. */
 export const INICIO_POR_ROL: Record<Rol, string> = {
@@ -55,6 +56,26 @@ export class AuthService {
     return this.guardar(await firstValueFrom(this.api.post<Sesion>('/auth/login', { email, password })));
   }
 
+  /** Canjea un token de Keycloak por una sesión de BRASA (el backend verifica la firma y el rol). */
+  async iniciarConKeycloak(tokenKeycloak: string): Promise<Usuario> {
+    const usuario = this.guardar(await firstValueFrom(this.api.post<Sesion>('/auth/keycloak', { token: tokenKeycloak })));
+    try {
+      sessionStorage.setItem(CLAVE_ORIGEN, 'keycloak');
+    } catch {
+      /* almacenamiento no disponible */
+    }
+    return usuario;
+  }
+
+  /** true si la sesión actual se abrió con Keycloak (al salir también se cierra allá). */
+  get sesionDeKeycloak(): boolean {
+    try {
+      return sessionStorage.getItem(CLAVE_ORIGEN) === 'keycloak';
+    } catch {
+      return false;
+    }
+  }
+
   async registrar(nombre: string, email: string, password: string): Promise<Usuario> {
     return this.guardar(await firstValueFrom(this.api.post<Sesion>('/auth/registro', { nombre, email, password })));
   }
@@ -77,6 +98,7 @@ export class AuthService {
     this.sesion.set(null);
     try {
       sessionStorage.removeItem(CLAVE);
+      sessionStorage.removeItem(CLAVE_ORIGEN);
     } catch {
       /* almacenamiento no disponible */
     }

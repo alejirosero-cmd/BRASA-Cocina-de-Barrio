@@ -1,0 +1,75 @@
+{
+  "realm": "brasa",
+  "displayName": "BRASA – Personal del restaurante",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "bruteForceProtected": true,
+  "failureFactor": 5,
+  "passwordPolicy": "length(10) and notUsername",
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 7200,
+  "internationalizationEnabled": true,
+  "supportedLocales": ["es", "en"],
+  "defaultLocale": "es",
+  "roles": {
+    "realm": [
+      { "name": "ADMIN", "description": "Administración de BRASA" },
+      { "name": "MESERO", "description": "Meseros: llamados, confirmar, entregar y cobrar" },
+      { "name": "COCINA", "description": "Cocina: preparar pedidos" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "brasa-web",
+      "name": "BRASA – Web",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://localhost:8088/auth/keycloak", "http://localhost:4200/auth/keycloak"],
+      "webOrigins": ["http://localhost:8088", "http://localhost:4200"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:8088/login##http://localhost:4200/login"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "admin",
+      "email": "admin@brasa.local",
+      "emailVerified": true,
+      "firstName": "Administrador",
+      "lastName": "BRASA",
+      "enabled": true,
+      "credentials": [{ "type": "password", "value": "${KC_CLAVE_ADMIN}", "temporary": false }],
+      "realmRoles": ["ADMIN"]
+    },
+    {
+      "username": "cocina",
+      "email": "cocina@brasa.local",
+      "emailVerified": true,
+      "firstName": "Cocina",
+      "lastName": "BRASA",
+      "enabled": true,
+      "credentials": [{ "type": "password", "value": "${KC_CLAVE_PERSONAL}", "temporary": false }],
+      "realmRoles": ["COCINA"]
+    },
+    {
+      "username": "mesero",
+      "email": "mesero@brasa.local",
+      "emailVerified": true,
+      "firstName": "Mesero",
+      "lastName": "BRASA",
+      "enabled": true,
+      "credentials": [{ "type": "password", "value": "${KC_CLAVE_PERSONAL}", "temporary": false }],
+      "realmRoles": ["MESERO"]
+    }
+  ]
+}

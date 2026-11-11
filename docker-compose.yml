@@ -33,6 +33,11 @@ services:
       IMPUESTO_PORCENTAJE: ${IMPUESTO_PORCENTAJE:-19}
       SEMILLA_ADMIN_PASSWORD: ${SEMILLA_ADMIN_PASSWORD:-}
       SEMILLA_DEMO_PASSWORD: ${SEMILLA_DEMO_PASSWORD:-}
+      # Keycloak: el navegador lo ve en localhost; el backend descarga las llaves por la red interna.
+      KEYCLOAK_URL: http://localhost:${PUERTO_KEYCLOAK:-8089}
+      KEYCLOAK_URL_INTERNA: http://keycloak:8080
+      KEYCLOAK_REALM: brasa
+      KEYCLOAK_CLIENTE: brasa-web
     depends_on:
       db:
         condition: service_healthy
@@ -51,6 +56,26 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    restart: unless-stopped
+
+  # Inicio de sesión único (SSO) para el personal: http://localhost:8089 (consola de administración en /admin).
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?Define KEYCLOAK_ADMIN_PASSWORD en .env}
+      # Dirección pública: es el emisor ("iss") de los tokens que verifica el backend.
+      KC_HOSTNAME: http://localhost:${PUERTO_KEYCLOAK:-8089}
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HEALTH_ENABLED: "true"
+      # Contraseñas de las cuentas del realm (se insertan en keycloak/brasa-realm.json al importarlo).
+      KC_CLAVE_ADMIN: ${KC_CLAVE_ADMIN:?Define KC_CLAVE_ADMIN en .env}
+      KC_CLAVE_PERSONAL: ${KC_CLAVE_PERSONAL:?Define KC_CLAVE_PERSONAL en .env}
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+    ports:
+      - "${PUERTO_KEYCLOAK:-8089}:8080"
     restart: unless-stopped
 
 volumes:

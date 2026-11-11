@@ -4,6 +4,7 @@ import { Router, RouterLink } from '@angular/router';
 import { mensajeError } from '../../core/services/api.service';
 import { AuthService, INICIO_POR_ROL } from '../../core/services/auth.service';
 import { NotificacionesService } from '../../core/services/notificaciones.service';
+import { KeycloakService } from '../../core/auth/keycloak.service';
 
 const CAMPO =
   'w-full rounded-xl border border-brasa-border px-4 py-3 text-sm outline-none transition focus:border-brasa-orange focus:ring-2 focus:ring-brasa-orange/30';
@@ -40,6 +41,15 @@ function rutaSegura(valor: string | undefined): string | null {
           <a routerLink="/recuperar" class="text-brasa-muted hover:text-brasa-orange">¿Olvidaste tu contraseña?</a>
           <a routerLink="/registro" class="font-semibold text-brasa-orange">Crear cuenta</a>
         </div>
+        @if (keycloakDisponible()) {
+          <div class="mt-6 flex items-center gap-3 text-xs text-brasa-muted" aria-hidden="true">
+            <span class="h-px flex-1 bg-brasa-border"></span> o <span class="h-px flex-1 bg-brasa-border"></span>
+          </div>
+          <button type="button" class="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-brasa-black px-6 py-3.5 text-sm font-semibold text-brasa-black transition hover:bg-brasa-black hover:text-white disabled:opacity-60"
+            [disabled]="enviando()" (click)="conKeycloak()">
+            Personal del restaurante: ingresar con Keycloak
+          </button>
+        }
       </form>
     </section>
   `,
@@ -47,12 +57,29 @@ function rutaSegura(valor: string | undefined): string | null {
 export class LoginComponent {
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
+  private readonly keycloak = inject(KeycloakService);
   readonly volver = input<string>();
 
   protected email = '';
   protected password = '';
   protected readonly enviando = signal(false);
   protected readonly error = signal('');
+  protected readonly keycloakDisponible = signal(false);
+
+  constructor() {
+    this.keycloak.configuracion().then((c) => this.keycloakDisponible.set(c !== null));
+  }
+
+  protected async conKeycloak(): Promise<void> {
+    this.error.set('');
+    this.enviando.set(true);
+    try {
+      await this.keycloak.iniciar(rutaSegura(this.volver()));
+    } catch (e) {
+      this.error.set(mensajeError(e, 'No se pudo conectar con Keycloak.'));
+      this.enviando.set(false);
+    }
+  }
 
   protected async enviar(): Promise<void> {
     this.enviando.set(true);
@@ -257,7 +284,7 @@ export class RestablecerComponent {
         }
         <button class="${BOTON} mt-6" type="submit" [disabled]="enviando() || f.invalid">Actualizar contraseña</button>
         <p class="mt-3 text-xs text-brasa-muted">Al cambiarla se cerrarán tus sesiones en otros dispositivos.</p>
-        <button type="button" class="mt-6 w-full rounded-xl border border-brasa-border px-6 py-3 text-sm font-semibold" (click)="auth.cerrarSesion()">Cerrar sesión</button>
+        <button type="button" class="mt-6 w-full rounded-xl border border-brasa-border px-6 py-3 text-sm font-semibold" (click)="salir()">Cerrar sesión</button>
       </form>
     </section>
   `,
@@ -265,6 +292,14 @@ export class RestablecerComponent {
 export class CuentaComponent {
   protected readonly auth = inject(AuthService);
   private readonly notificaciones = inject(NotificacionesService);
+  private readonly keycloak = inject(KeycloakService);
+
+  /** Si la sesión vino de Keycloak, también se cierra la sesión única allá. */
+  protected salir(): void {
+    const deKeycloak = this.auth.sesionDeKeycloak;
+    this.auth.cerrarSesion(!deKeycloak);
+    if (deKeycloak) this.keycloak.cerrarSesionKeycloak();
+  }
   protected actual = '';
   protected nueva = '';
   protected readonly enviando = signal(false);
@@ -282,6 +317,51 @@ export class CuentaComponent {
       this.error.set(mensajeError(e));
     } finally {
       this.enviando.set(false);
+    }
+  }
+}
+
+/** Destino del retorno de Keycloak (/auth/keycloak?code=...&state=...). */
+@Component({
+  selector: 'app-retorno-keycloak',
+  imports: [RouterLink],
+  template: `
+    <section class="px-5">
+      <div class="${TARJETA} text-center">
+        @if (error()) {
+          <h1 class="font-heading text-xl font-bold text-brasa-black">No se pudo iniciar sesión</h1>
+          <p class="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{{ error() }}</p>
+          <a routerLink="/login" class="${BOTON} mt-6">Volver a intentar</a>
+        } @else {
+          <p class="text-sm text-brasa-muted" role="status">Completando el inicio de sesión con Keycloak...</p>
+        }
+      </div>
+    </section>
+  `,
+})
+export class RetornoKeycloakComponent {
+  private readonly keycloak = inject(KeycloakService);
+  private readonly router = inject(Router);
+  readonly code = input<string>('');
+  readonly state = input<string>('');
+  readonly error_description = input<string>('');
+  protected readonly error = signal('');
+
+  constructor() {
+    queueMicrotask(() => this.completar());
+  }
+
+  private async completar(): Promise<void> {
+    if (this.error_description() || !this.code()) {
+      this.error.set(this.error_description() || 'Keycloak no devolvió un código de acceso.');
+      return;
+    }
+    try {
+      const { usuario, volver } = await this.keycloak.completar(this.code(), this.state());
+      // Se quita el código de la barra de direcciones y del historial.
+      this.router.navigateByUrl(rutaSegura(volver ?? undefined) ?? INICIO_POR_ROL[usuario.rol], { replaceUrl: true });
+    } catch (e) {
+      this.error.set(mensajeError(e, e instanceof Error ? e.message : 'No se pudo completar el inicio de sesión.'));
     }
   }
 }

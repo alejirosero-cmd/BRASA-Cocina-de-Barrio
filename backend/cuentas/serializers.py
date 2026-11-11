@@ -47,6 +47,10 @@ class Restablecer(Estricto):
     password = clave()
 
 
+class LoginKeycloak(Estricto):
+    token = serializers.CharField(min_length=20, max_length=8000)
+
+
 class CambiarPassword(Estricto):
     actual = serializers.CharField(max_length=MAX, trim_whitespace=False)
     nueva = clave()

@@ -5,6 +5,7 @@ from nucleo.limites import Limite, LimiteGeneral
 from nucleo.serializadores import validar
 from nucleo.vistas import VistaPublica, vista_roles
 
+from . import keycloak
 from . import serializers as s
 from . import servicios
 from .models import Usuario
@@ -45,6 +46,20 @@ class RestablecerVista(VistaPublica):
         d = validar(s.Restablecer, request.data)
         servicios.restablecer_password(d['token'], d['password'])
         return Response({'mensaje': 'Tu contraseña fue actualizada. Ya puedes iniciar sesión.'})
+
+
+class ConfigVista(VistaPublica):
+    """Opciones de inicio de sesión disponibles (p. ej. si Keycloak está habilitado)."""
+
+    def get(self, request):
+        return Response({'keycloak': keycloak.configuracion_publica()})
+
+
+class LoginKeycloakVista(VistaPublica):
+    throttle_classes = ESTRICTO
+
+    def post(self, request):
+        return Response(keycloak.iniciar_sesion(validar(s.LoginKeycloak, request.data)['token']))
 
 
 class PerfilVista(APIView):

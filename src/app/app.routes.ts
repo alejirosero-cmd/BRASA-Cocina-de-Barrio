@@ -21,6 +21,7 @@ export const routes: Routes = [
 
   // ---- Cuenta ----
   { path: 'login', loadComponent: () => auth().then((m) => m.LoginComponent), title: 'Iniciar sesión - BRASA' },
+  { path: 'auth/keycloak', loadComponent: () => auth().then((m) => m.RetornoKeycloakComponent), title: 'Iniciando sesión - BRASA' },
   { path: 'registro', loadComponent: () => auth().then((m) => m.RegistroComponent), title: 'Crear cuenta - BRASA' },
   { path: 'recuperar', loadComponent: () => auth().then((m) => m.RecuperarComponent), title: 'Recuperar contraseña - BRASA' },
   { path: 'restablecer', loadComponent: () => auth().then((m) => m.RestablecerComponent), title: 'Nueva contraseña - BRASA' },

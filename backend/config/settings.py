@@ -46,6 +46,21 @@ if PAGOS_PROVEEDOR == 'wompi':
     if not ES_PRODUCCION and not WOMPI['public_key'].startswith('pub_test_'):
         raise ErrorDeConfiguracion('Fuera de producción solo se permiten llaves de pruebas de Wompi (pub_test_...)')
 
+# --- Keycloak (inicio de sesión único para el personal). Vacío = desactivado ---
+# KEYCLOAK_URL es la dirección pública (la que ve el navegador y la que figura como emisor del token);
+# KEYCLOAK_URL_INTERNA es la que usa el backend para descargar las llaves (en Docker: http://keycloak:8080).
+_KC_URL = texto('KEYCLOAK_URL').rstrip('/')
+KEYCLOAK = None
+if _KC_URL:
+    _KC_REALM = texto('KEYCLOAK_REALM', 'brasa')
+    KEYCLOAK = {
+        'url': _KC_URL,
+        'realm': _KC_REALM,
+        'cliente': texto('KEYCLOAK_CLIENTE', 'brasa-web'),
+        'emisor': f'{_KC_URL}/realms/{_KC_REALM}',
+        'jwks': f'{texto("KEYCLOAK_URL_INTERNA", _KC_URL).rstrip("/")}/realms/{_KC_REALM}/protocol/openid-connect/certs',
+    }
+
 # --- Aplicaciones ---
 INSTALLED_APPS = [
     'django.contrib.contenttypes',
