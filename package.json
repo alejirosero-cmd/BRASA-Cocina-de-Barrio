@@ -7,8 +7,10 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "api": "npm --prefix server run start:dev",
-    "usuario:clave": "npm --prefix server run usuario:clave --"
+    "api": "cd backend && .venv\\Scripts\\python manage.py runserver 8000",
+    "api:instalar": "cd backend && py -m venv .venv && .venv\\Scripts\\python -m pip install -r requirements.txt && .venv\\Scripts\\python manage.py migrate && .venv\\Scripts\\python manage.py sembrar",
+    "api:test": "cd backend && .venv\\Scripts\\python manage.py test",
+    "usuario:clave": "cd backend && .venv\\Scripts\\python manage.py cambiar_clave"
   },
   "private": true,
   "packageManager": "npm@10.9.8",
