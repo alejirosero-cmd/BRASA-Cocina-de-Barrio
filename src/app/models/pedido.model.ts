@@ -1,7 +1,7 @@
 import { ItemCarrito } from './carrito.model';
 import { MesaConfig } from './mesa.model';
 
-/** Estados del pedido definidos por el servidor (ver server/src/pedidos/transiciones.ts). */
+/** Estados del pedido definidos por el servidor (ver backend/nucleo/dominio.py). */
 export type EstadoPedido = 'PENDIENTE' | 'CONFIRMADO' | 'EN_PREPARACION' | 'LISTO' | 'ENTREGADO' | 'CANCELADO';
 export type EstadoPagoPedido = 'PENDIENTE' | 'PARCIAL' | 'PAGADO' | 'REEMBOLSADO';
 

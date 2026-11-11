@@ -3,7 +3,6 @@ dist
 .angular
 .git
 backend
-server
 docs
 .env
 *.log

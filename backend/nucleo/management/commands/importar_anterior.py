@@ -1,9 +1,9 @@
 """
-Importa los datos de la versión anterior (NestJS + Prisma, archivo server/prisma/dev.db):
+Importa los datos de la versión anterior (NestJS + Prisma, por ejemplo backend/respaldo/datos-version-nestjs.db):
 usuarios con sus contraseñas, mesas con sus mismos códigos QR, menú, cupones, pedidos, pagos,
 llamados al mesero y calificaciones. No modifica la base anterior y solo importa lo que falte.
 
-    python manage.py importar_anterior ../server/prisma/dev.db
+    python manage.py importar_anterior respaldo/datos-version-nestjs.db
 """
 import json
 import sqlite3

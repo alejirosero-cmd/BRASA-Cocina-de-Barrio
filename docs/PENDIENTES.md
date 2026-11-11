@@ -17,5 +17,4 @@ Prioridad: **A** alta · **M** media · **B** baja.
 | 11 | B | Política de privacidad publicada y texto legal completo de tratamiento de datos | Las casillas de autorización existen; falta el documento enlazado |
 | 12 | B | Revisar los iconos PWA y agregar capturas al manifiesto | No se verificó que los iconos actuales correspondan a la marca |
 | 13 | B | Paginación/filtros adicionales en historial de pagos y calificaciones | Hoy se muestran los 50 más recientes |
-| 14 | B | Eliminar la carpeta `server/` (backend anterior en NestJS) | Reemplazada por `backend/` (Django); se conserva hasta que se autorice borrarla |
 | 15 | B | Ejecutar el pipeline en GitLab.com | El `.gitlab-ci.yml` está validado y su job de backend se reprodujo localmente con PostgreSQL; falta ejecutarlo en GitLab |

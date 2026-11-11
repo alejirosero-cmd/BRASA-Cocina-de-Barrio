@@ -14,8 +14,8 @@ tiempo real y pagar desde el celular. Incluye paneles para cocina, meseros y adm
 | CI/CD | **GitLab CI/CD** (`.gitlab-ci.yml`): pruebas, build e imágenes Docker |
 | Pruebas | Django TestCase (50 pruebas) · Vitest (7 pruebas) |
 
-> La carpeta `server/` contiene la versión anterior del backend en NestJS. Ya no se usa: se conserva hasta
-> que se decida eliminarla. Sus datos se pueden importar con `python manage.py importar_anterior`.
+> La versión anterior del backend (NestJS) se retiró del repositorio; queda en el historial de git. Sus datos
+> se pueden importar a Django con `python manage.py importar_anterior <archivo.db>`.
 
 ---
 
