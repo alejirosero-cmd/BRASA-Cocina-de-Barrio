@@ -533,11 +533,22 @@ interface MesaAdmin { id: string; numero: number; codigo: string; activa: boolea
       @for (m of mesas(); track m.id) {
         <div class="${TARJETA} flex flex-col items-center p-4 text-center" [class.opacity-50]="!m.activa">
           <p class="font-heading text-lg font-bold">Mesa {{ m.numero }}</p>
-          @if (qrs()[m.id]) { <img [src]="qrs()[m.id]" [alt]="'Código QR de la mesa ' + m.numero" class="my-2 h-36 w-36" /> }
+          @if (qrs()[m.id]) {
+            <img [src]="qrs()[m.id]" [alt]="'Código QR de la mesa ' + m.numero" width="144" height="144" class="my-2 h-36 w-36" />
+          } @else {
+            <div class="my-2 flex h-36 w-36 items-center justify-center rounded-xl bg-brasa-gray-light text-xs text-brasa-muted">
+              {{ cargando() ? 'Cargando QR...' : 'QR no disponible' }}
+            </div>
+          }
           <p class="font-mono text-sm tracking-widest">{{ m.codigo }}</p>
+          <p class="mt-1 text-xs text-brasa-muted">Escanea para pedir · o escribe {{ m.numero < 10 ? '0' + m.numero : m.numero }}</p>
           <div class="mt-3 flex flex-wrap justify-center gap-1 print:hidden">
             <button type="button" class="${BOTON_SEC}" [disabled]="ocupado()" (click)="alternar(m)">{{ m.activa ? 'Desactivar' : 'Activar' }}</button>
             <button type="button" class="${BOTON_SEC}" [disabled]="ocupado()" (click)="regenerar(m)">Nuevo QR</button>
+            @if (qrs()[m.id]) {
+              <a class="${BOTON_SEC}" [href]="qrs()[m.id]" [attr.download]="'mesa-' + m.numero + '-qr.svg'">Descargar</a>
+            }
+            <a class="${BOTON_SEC}" [href]="m.url" target="_blank" rel="noopener">Abrir</a>
           </div>
         </div>
       } @empty { <p class="text-sm text-brasa-muted">{{ cargando() ? 'Cargando...' : 'Sin mesas' }}</p> }
@@ -558,14 +569,19 @@ export class AdminMesasComponent extends SeccionAdmin implements OnInit {
     return this.cargar(async () => {
       const mesas = await firstValueFrom(this.api.get<MesaAdmin[]>('/mesas'));
       this.mesas.set(mesas);
+      // Si el QR de una mesa falla, las demás se siguen mostrando.
       const entradas = await Promise.all(
         mesas.map(async (m) => {
-          const svg = await this.api.texto(`/mesas/${m.id}/qr.svg`);
-          // El SVG lo genera nuestro servidor con la librería qrcode; se muestra como imagen (no se inyecta en el DOM).
-          return [m.id, this.sanitizer.bypassSecurityTrustUrl(`data:image/svg+xml;base64,${btoa(svg)}`)] as const;
+          try {
+            const svg = await this.api.texto(`/mesas/${m.id}/qr.svg`);
+            // El SVG lo genera nuestro servidor con la librería qrcode; se muestra como imagen (no se inyecta en el DOM).
+            return [m.id, this.sanitizer.bypassSecurityTrustUrl(`data:image/svg+xml;base64,${btoa(svg)}`)] as const;
+          } catch {
+            return null;
+          }
         }),
       );
-      this.qrs.set(Object.fromEntries(entradas));
+      this.qrs.set(Object.fromEntries(entradas.filter((e) => e !== null)));
     });
   }
 
