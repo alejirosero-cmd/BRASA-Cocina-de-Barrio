@@ -58,7 +58,7 @@
       "firstName": "Cocina",
       "lastName": "BRASA",
       "enabled": true,
-      "credentials": [{ "type": "password", "value": "${KC_CLAVE_PERSONAL}", "temporary": false }],
+      "credentials": [{ "type": "password", "value": "${KC_CLAVE_COCINA}", "temporary": false }],
       "realmRoles": ["COCINA"]
     },
     {
@@ -68,7 +68,7 @@
       "firstName": "Mesero",
       "lastName": "BRASA",
       "enabled": true,
-      "credentials": [{ "type": "password", "value": "${KC_CLAVE_PERSONAL}", "temporary": false }],
+      "credentials": [{ "type": "password", "value": "${KC_CLAVE_MESERO}", "temporary": false }],
       "realmRoles": ["MESERO"]
     }
   ]

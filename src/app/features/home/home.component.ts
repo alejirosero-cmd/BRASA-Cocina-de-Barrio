@@ -94,7 +94,7 @@ interface Paso {
             @if (tipo() === 'mesa') {
               <div class="mt-4">
                 <label for="mesa-inicio" class="mb-1.5 block text-sm font-medium text-brasa-black">
-                  Código de tu mesa
+                  Número o código de tu mesa
                 </label>
                 @if (mesaActual()) {
                   <p class="mb-2 rounded-xl bg-green-50 px-3 py-2 text-xs font-medium text-green-700">
@@ -120,11 +120,11 @@ interface Paso {
                       [value]="codigo()"
                       (input)="actualizarCodigo($event)"
                       (keydown.enter)="verMenu()"
-                      placeholder="Ej. K7P2QXMA"
+                      placeholder="Ej. 01 o K7P2QXMA"
                     />
                   </div>
                 </div>
-                <p id="ayuda-mesa-inicio" class="mt-2 text-xs text-brasa-muted">Escanea el QR de tu mesa o escribe el código impreso debajo de él.</p>
+                <p id="ayuda-mesa-inicio" class="mt-2 text-xs text-brasa-muted">Escanea el QR de tu mesa o escribe su número (ej. 01) o el código impreso debajo del QR.</p>
                 @if (error()) {
                   <p class="mt-2 text-xs font-medium text-red-600" role="alert">{{ error() }}</p>
                 }
@@ -396,8 +396,8 @@ export class HomeComponent {
       this.irAlMenu();
       return;
     }
-    if (!/^[A-Z0-9]{6,12}$/.test(this.codigo())) {
-      this.error.set('Escanea el QR de tu mesa o escribe el código impreso debajo de él.');
+    if (!/^([0-9]{1,3}|[A-Z0-9]{6,12})$/.test(this.codigo())) {
+      this.error.set('Escanea el QR de tu mesa o escribe su número (ej. 01) o el código impreso debajo del QR.');
       return;
     }
     this.validando.set(true);

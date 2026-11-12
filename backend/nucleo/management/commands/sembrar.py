@@ -45,9 +45,10 @@ class Command(BaseCommand):
         self._usuario(os.environ.get('SEMILLA_ADMIN_EMAIL', 'admin@brasa.local'), 'Administrador', 'ADMIN',
                       os.environ.get('SEMILLA_ADMIN_PASSWORD'))
         if not settings.ES_PRODUCCION:
+            # Cada rol puede tener su propia contraseña; si no, se usa la de demostración.
             demo = os.environ.get('SEMILLA_DEMO_PASSWORD')
-            self._usuario('cocina@brasa.local', 'Cocina', 'COCINA', demo)
-            self._usuario('mesero@brasa.local', 'Mesero', 'MESERO', demo)
+            self._usuario('cocina@brasa.local', 'Cocina', 'COCINA', os.environ.get('SEMILLA_COCINA_PASSWORD') or demo)
+            self._usuario('mesero@brasa.local', 'Mesero', 'MESERO', os.environ.get('SEMILLA_MESERO_PASSWORD') or demo)
         self.stdout.write(self.style.SUCCESS('Listo.'))
 
     def _usuario(self, email, nombre, rol, clave):

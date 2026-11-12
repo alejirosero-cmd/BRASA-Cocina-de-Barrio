@@ -32,12 +32,19 @@ def _mesa(id) -> Mesa:
 
 
 class ResolverCodigoVista(VistaPublica):
-    """Consulta pública a partir del código del QR. Solo revela el número de mesa."""
+    """
+    Consulta pública a partir del código del QR o del número de la mesa (1, 01, 12...).
+    Devuelve el número y el código, que es lo que se usa después para enviar el pedido.
+    """
 
     throttle_classes = [LimiteGeneral, Limite('mesa')]
 
     def get(self, request, codigo):
-        mesa = Mesa.objects.filter(codigo=codigo.strip().upper(), activa=True).first()
+        valor = codigo.strip().upper()
+        if valor.isdigit() and len(valor) <= 3:
+            mesa = Mesa.objects.filter(numero=int(valor), activa=True).first()
+        else:
+            mesa = Mesa.objects.filter(codigo=valor, activa=True).first()
         if not mesa:
             raise NoEncontrado('El código de mesa no es válido')
         return Response({'numero': mesa.numero, 'codigo': mesa.codigo})

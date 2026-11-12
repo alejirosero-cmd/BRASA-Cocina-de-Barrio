@@ -33,6 +33,8 @@ services:
       IMPUESTO_PORCENTAJE: ${IMPUESTO_PORCENTAJE:-19}
       SEMILLA_ADMIN_PASSWORD: ${SEMILLA_ADMIN_PASSWORD:-}
       SEMILLA_DEMO_PASSWORD: ${SEMILLA_DEMO_PASSWORD:-}
+      SEMILLA_COCINA_PASSWORD: ${SEMILLA_COCINA_PASSWORD:-}
+      SEMILLA_MESERO_PASSWORD: ${SEMILLA_MESERO_PASSWORD:-}
       # Keycloak: el navegador lo ve en localhost; el backend descarga las llaves por la red interna.
       KEYCLOAK_URL: http://localhost:${PUERTO_KEYCLOAK:-8089}
       KEYCLOAK_URL_INTERNA: http://keycloak:8080
@@ -71,7 +73,9 @@ services:
       KC_HEALTH_ENABLED: "true"
       # Contraseñas de las cuentas del realm (se insertan en keycloak/brasa-realm.json al importarlo).
       KC_CLAVE_ADMIN: ${KC_CLAVE_ADMIN:?Define KC_CLAVE_ADMIN en .env}
-      KC_CLAVE_PERSONAL: ${KC_CLAVE_PERSONAL:?Define KC_CLAVE_PERSONAL en .env}
+      # Cocina y mesero pueden tener clave propia; si no, usan KC_CLAVE_PERSONAL.
+      KC_CLAVE_COCINA: ${KC_CLAVE_COCINA:-${KC_CLAVE_PERSONAL:?Define KC_CLAVE_COCINA o KC_CLAVE_PERSONAL en .env}}
+      KC_CLAVE_MESERO: ${KC_CLAVE_MESERO:-${KC_CLAVE_PERSONAL:?Define KC_CLAVE_MESERO o KC_CLAVE_PERSONAL en .env}}
     volumes:
       - ./keycloak:/opt/keycloak/data/import:ro
     ports:

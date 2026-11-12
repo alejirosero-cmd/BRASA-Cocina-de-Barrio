@@ -322,6 +322,13 @@ class AdministracionTest(BaseApi):
         self.assertEqual(self.post(f'/api/mesas/{mesa["id"]}/regenerar-codigo', **a).status_code, 201)
         self.assertEqual(self.http.get(f'/api/mesas/codigo/{mesa["codigo"]}').status_code, 404)
 
+    def test_mesa_por_numero(self):
+        mesa = self.post('/api/mesas', {'numero': 7}, **self.auth('ADMIN')).data
+        for escrito in ('7', '07', '007'):
+            r = self.http.get(f'/api/mesas/codigo/{escrito}')
+            self.assertEqual((r.status_code, r.data['numero'], r.data['codigo']), (200, 7, mesa['codigo']))
+        self.assertEqual(self.http.get('/api/mesas/codigo/99').status_code, 404)
+
     def test_reportes_y_auditoria(self):
         pedido, _ = self.crear_pedido()
         self.post('/api/pagos/efectivo', {'pedidoId': pedido['id']}, **self.auth('MESERO'))

@@ -62,7 +62,7 @@ import { TipoPedido } from '../../../models/mesa.model';
           @if (tipo() === 'mesa') {
             <div class="space-y-2">
               <label for="numero-mesa" class="block text-sm font-semibold text-brasa-black">
-                Código de la mesa
+                Número o código de la mesa
               </label>
               <input
                 id="numero-mesa"
@@ -75,10 +75,10 @@ import { TipoPedido } from '../../../models/mesa.model';
                 [value]="codigo()"
                 (input)="actualizarCodigo($event)"
                 (keydown.enter)="guardar()"
-                placeholder="Ej. K7P2QXMA"
+                placeholder="Ej. 01 o K7P2QXMA"
               />
               <p id="ayuda-numero-mesa" class="text-xs text-brasa-muted">
-                Escanea el QR de tu mesa o escribe el código impreso debajo de él.
+                Escanea el QR de tu mesa o escribe su número (ej. 01) o el código impreso debajo del QR.
                 @if (mesa.codigo()) { Actualmente: {{ mesa.etiqueta() }}. }
               </p>
               @if (error()) {
@@ -145,8 +145,8 @@ export class CambiarMesaComponent {
       return this.listo();
     }
     if (!this.codigo() && this.mesa.codigo()) return this.cerrar();
-    if (!/^[A-Z0-9]{6,12}$/.test(this.codigo())) {
-      this.error.set('Escanea el QR de tu mesa o escribe el código impreso debajo de él.');
+    if (!/^([0-9]{1,3}|[A-Z0-9]{6,12})$/.test(this.codigo())) {
+      this.error.set('Escanea el QR de tu mesa o escribe su número (ej. 01) o el código impreso debajo del QR.');
       return;
     }
     this.validando.set(true);
