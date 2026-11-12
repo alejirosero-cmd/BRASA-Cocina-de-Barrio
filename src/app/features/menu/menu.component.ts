@@ -21,6 +21,8 @@ import { ProductoCardComponent } from '../../shared/components/producto-card/pro
 import { PrecioCopPipe } from '../../shared/pipes/precio-cop.pipe';
 import { ProductoDetalleComponent } from '../../shared/components/producto-detalle/producto-detalle.component';
 import { FavoritosService } from '../../core/services/favoritos.service';
+import { AuthService } from '../../core/services/auth.service';
+import { MesaService } from '../../core/services/mesa.service';
 
 @Component({
   selector: 'app-menu',
@@ -41,6 +43,16 @@ import { FavoritosService } from '../../core/services/favoritos.service';
     LucideHeart,
   ],
   template: `
+    @if (auth.esPersonal() && mesa.codigo()) {
+      <!-- Un mesero está tomando el pedido por el cliente. -->
+      <div class="bg-brasa-black text-white">
+        <div class="mx-auto flex max-w-[1760px] flex-wrap items-center justify-between gap-3 px-5 py-3 text-sm md:px-10 xl:px-20">
+          <p><strong>Tomando pedido para la {{ mesa.etiqueta() }}.</strong> Agrega los productos y envíalo desde el carrito.</p>
+          <a routerLink="/mesero" class="font-semibold text-brasa-orange hover:underline">Volver a Meseros</a>
+        </div>
+      </div>
+    }
+
     <section class="mx-auto max-w-[1760px] px-5 pb-5 pt-8 md:px-10 md:pt-10 xl:px-20">
       <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
@@ -290,6 +302,8 @@ export class MenuComponent {
   protected readonly carrito = inject(CarritoService);
   protected readonly notificaciones = inject(NotificacionesService);
   protected readonly favoritos = inject(FavoritosService);
+  protected readonly auth = inject(AuthService);
+  protected readonly mesa = inject(MesaService);
 
   protected readonly productoSeleccionado = signal<Producto | null>(null);
   protected readonly detalleAbierto = signal(false);

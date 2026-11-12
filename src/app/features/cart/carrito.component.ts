@@ -18,6 +18,7 @@ import { PedidosService } from '../../core/services/pedidos.service';
 import { CONFIGURACION } from '../../core/config/configuracion';
 import { mensajeError } from '../../core/services/api.service';
 import { UiService } from '../../core/services/ui.service';
+import { AuthService } from '../../core/services/auth.service';
 import { ItemCarrito } from '../../models/carrito.model';
 import { PrecioCopPipe } from '../../shared/pipes/precio-cop.pipe';
 
@@ -296,6 +297,7 @@ export class CarritoComponent {
   private readonly pedidos = inject(PedidosService);
   private readonly notificaciones = inject(NotificacionesService);
   private readonly router = inject(Router);
+  private readonly auth = inject(AuthService);
 
   protected readonly notasCocina = signal('');
   protected readonly cupon = signal(this.carrito.cupon() ?? '');
@@ -358,7 +360,13 @@ export class CarritoComponent {
     try {
       const pedido = await this.pedidos.enviarCarrito(this.notasCocina());
       this.notificaciones.mostrar(`Pedido ${pedido.numero} enviado a cocina`);
-      this.router.navigate(['/pedido', pedido.id]);
+      if (this.auth.tieneRol('MESERO', 'ADMIN')) {
+        // El mesero tomó el pedido por el cliente: vuelve a su panel y la mesa queda libre en este equipo.
+        this.mesa.olvidar();
+        this.router.navigate(['/mesero']);
+      } else {
+        this.router.navigate(['/pedido', pedido.id]);
+      }
     } catch (error) {
       this.errorEnvio.set(mensajeError(error, 'No se pudo enviar el pedido. Tu carrito sigue guardado.'));
       this.notificaciones.mostrar('No se pudo enviar el pedido', 'error');

@@ -69,7 +69,9 @@ class CategoriasPublicasVista(VistaPublica):
         return Response(c.publica(), status=201)
 
 
-class ProductosAdminVista(vista_roles('ADMIN')):
+class ProductosAdminVista(vista_roles('ADMIN', 'COCINA', 'MESERO')):
+    """Todo el catálogo, incluidos los agotados: cocina y meseros lo usan para marcar disponibilidad."""
+
     def get(self, request):
         return Response(_productos(todos=True))
 

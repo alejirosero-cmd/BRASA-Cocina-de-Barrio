@@ -1,15 +1,17 @@
-import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
-import { LucideChefHat } from '@lucide/angular';
+import { Component, OnDestroy, OnInit, effect, inject, signal, untracked } from '@angular/core';
+import { LucideBellRing, LucideChefHat, LucideVolume2, LucideVolumeX } from '@lucide/angular';
+import { AvisoSonoroService } from '../../core/services/aviso-sonoro.service';
 import { mensajeError } from '../../core/services/api.service';
 import { NotificacionesService } from '../../core/services/notificaciones.service';
 import { PanelPersonalService } from '../../core/services/panel-personal.service';
 import { EstadoPedido, Pedido } from '../../models/pedido.model';
+import { PanelAgotadosComponent } from '../../shared/components/panel-agotados/panel-agotados.component';
 import { TarjetaPedidoComponent } from '../../shared/components/tarjeta-pedido/tarjeta-pedido.component';
 
 /** Panel de cocina: pedidos de todas las mesas, actualizados en tiempo real. */
 @Component({
   selector: 'app-cocina',
-  imports: [LucideChefHat, TarjetaPedidoComponent],
+  imports: [LucideChefHat, LucideVolume2, LucideVolumeX, LucideBellRing, TarjetaPedidoComponent, PanelAgotadosComponent],
   template: `
     <section class="mx-auto max-w-[1760px] px-5 py-8 md:px-10">
       <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
@@ -22,7 +24,27 @@ import { TarjetaPedidoComponent } from '../../shared/components/tarjeta-pedido/t
             {{ panel.conectado() ? 'En vivo' : 'Reconectando...' }}
           </p>
         </div>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition"
+          [class]="sonido.activo() ? 'border-brasa-orange bg-brasa-orange/10 text-brasa-black' : 'border-brasa-border text-brasa-muted hover:text-brasa-black'"
+          [attr.aria-pressed]="sonido.activo()"
+          (click)="sonido.alternar()"
+        >
+          @if (sonido.activo()) { <svg lucideVolume2 [size]="18"></svg> Sonido activado } @else { <svg lucideVolumeX [size]="18"></svg> Activar sonido de pedidos nuevos }
+        </button>
       </div>
+
+      @if (aviso(); as nuevo) {
+        <div class="mb-6 flex items-center gap-3 rounded-2xl border-2 border-brasa-orange bg-brasa-orange/10 px-5 py-3" role="status">
+          <svg lucideBellRing [size]="22" class="text-brasa-orange"></svg>
+          <p class="flex-1 text-sm font-semibold text-brasa-black">
+            Pedido nuevo {{ nuevo.numero }} · {{ nuevo.mesa.tipo === 'llevar' ? 'Para llevar' : 'Mesa ' + nuevo.mesa.numero }}
+            · {{ nuevo.items.length }} {{ nuevo.items.length === 1 ? 'producto' : 'productos' }}
+          </p>
+          <button type="button" class="text-sm font-semibold text-brasa-orange" (click)="aviso.set(null)">Entendido</button>
+        </div>
+      }
       @if (panel.error()) {
         <p class="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{{ panel.error() }}</p>
       }
@@ -51,13 +73,32 @@ import { TarjetaPedidoComponent } from '../../shared/components/tarjeta-pedido/t
           </section>
         }
       </div>
+
+      <div class="mt-8">
+        <app-panel-agotados />
+      </div>
     </section>
   `,
 })
 export class CocinaComponent implements OnInit, OnDestroy {
   protected readonly panel = inject(PanelPersonalService);
   private readonly notificaciones = inject(NotificacionesService);
+  protected readonly sonido = inject(AvisoSonoroService);
   protected readonly ocupado = signal<string | null>(null);
+  protected readonly aviso = signal<Pedido | null>(null);
+
+  constructor() {
+    // Pedido nuevo en vivo: timbre (si está activado) y aviso visible hasta que alguien lo vea.
+    effect(() => {
+      const nuevo = this.panel.ultimoNuevo();
+      // Al volver a esta pantalla no se repite el aviso de un pedido de hace rato.
+      if (!nuevo || Date.now() - Date.parse(nuevo.creadoEn) > 120_000) return;
+      untracked(() => {
+        this.aviso.set(nuevo);
+        this.sonido.sonar();
+      });
+    });
+  }
   protected readonly ahora = signal(Date.now());
   private reloj?: ReturnType<typeof setInterval>;
 

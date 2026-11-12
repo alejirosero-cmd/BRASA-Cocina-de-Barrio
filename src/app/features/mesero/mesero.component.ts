@@ -1,29 +1,99 @@
-import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { LucideBell } from '@lucide/angular';
-import { mensajeError } from '../../core/services/api.service';
+import { Router } from '@angular/router';
+import { firstValueFrom } from 'rxjs';
+import { LucideBell, LucideBellRing, LucideVolume2, LucideVolumeX } from '@lucide/angular';
+import { ApiService, mensajeError } from '../../core/services/api.service';
+import { AvisoSonoroService } from '../../core/services/aviso-sonoro.service';
+import { MesaService } from '../../core/services/mesa.service';
 import { NotificacionesService } from '../../core/services/notificaciones.service';
 import { PanelPersonalService } from '../../core/services/panel-personal.service';
 import { MOTIVOS_SOLICITUD } from '../../core/services/solicitudes-mesero.service';
-import { EstadoPedido, Pedido } from '../../models/pedido.model';
+import { ETIQUETA_ESTADO, EstadoPedido, Pedido } from '../../models/pedido.model';
+import { PanelAgotadosComponent } from '../../shared/components/panel-agotados/panel-agotados.component';
 import { TarjetaPedidoComponent } from '../../shared/components/tarjeta-pedido/tarjeta-pedido.component';
 import { PrecioCopPipe } from '../../shared/pipes/precio-cop.pipe';
 
-/** Panel de meseros: llamados de las mesas, pedidos por confirmar, listos para entregar y cobros. */
+interface EstadoMesa {
+  numero: number;
+  estado: string;
+  punto: string;
+  borde: string;
+  saldo: number;
+}
+
+/** Panel de meseros: mapa de mesas, llamados, pedidos por confirmar, en cocina, listos y cobros. */
 @Component({
   selector: 'app-mesero',
-  imports: [DatePipe, LucideBell, TarjetaPedidoComponent, PrecioCopPipe],
+  imports: [DatePipe, LucideBell, LucideBellRing, LucideVolume2, LucideVolumeX, TarjetaPedidoComponent, PrecioCopPipe, PanelAgotadosComponent],
   template: `
     <section class="mx-auto max-w-[1760px] px-5 py-8 md:px-10">
-      <div class="mb-6">
-        <h1 class="flex items-center gap-3 font-heading text-3xl font-bold tracking-tight text-brasa-black">
-          <svg lucideBell [size]="26" class="text-brasa-orange"></svg> Meseros
-        </h1>
-        <p class="mt-1 flex items-center gap-2 text-sm text-brasa-muted">
-          <span class="inline-flex h-2 w-2 rounded-full" [class]="panel.conectado() ? 'bg-green-500' : 'bg-amber-400'" aria-hidden="true"></span>
-          {{ panel.conectado() ? 'En vivo' : 'Reconectando...' }}
-        </p>
+      <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 class="flex items-center gap-3 font-heading text-3xl font-bold tracking-tight text-brasa-black">
+            <svg lucideBell [size]="26" class="text-brasa-orange"></svg> Meseros
+          </h1>
+          <p class="mt-1 flex items-center gap-2 text-sm text-brasa-muted">
+            <span class="inline-flex h-2 w-2 rounded-full" [class]="panel.conectado() ? 'bg-green-500' : 'bg-amber-400'" aria-hidden="true"></span>
+            {{ panel.conectado() ? 'En vivo' : 'Reconectando...' }}
+          </p>
+        </div>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition"
+          [class]="sonido.activo() ? 'border-brasa-orange bg-brasa-orange/10 text-brasa-black' : 'border-brasa-border text-brasa-muted hover:text-brasa-black'"
+          [attr.aria-pressed]="sonido.activo()"
+          (click)="sonido.alternar()"
+        >
+          @if (sonido.activo()) { <svg lucideVolume2 [size]="18"></svg> Sonido activado } @else { <svg lucideVolumeX [size]="18"></svg> Activar sonido de avisos }
+        </button>
       </div>
+
+      @if (aviso()) {
+        <div class="mb-6 flex items-center gap-3 rounded-2xl border-2 border-brasa-orange bg-brasa-orange/10 px-5 py-3" role="status">
+          <svg lucideBellRing [size]="22" class="text-brasa-orange"></svg>
+          <p class="flex-1 text-sm font-semibold text-brasa-black">{{ aviso() }}</p>
+          <button type="button" class="text-sm font-semibold text-brasa-orange" (click)="aviso.set('')">Entendido</button>
+        </div>
+      }
+
+      <!-- Mapa de mesas: de un vistazo qué mesa espera, cuál está comiendo y cuál debe. -->
+      <section aria-label="Mesas" class="mb-8">
+        <div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 class="font-heading text-lg font-semibold">Mesas</h2>
+          <p class="flex flex-wrap gap-3 text-xs text-brasa-muted">
+            <span class="inline-flex items-center gap-1"><span class="h-2.5 w-2.5 rounded-full bg-gray-300"></span>Libre</span>
+            <span class="inline-flex items-center gap-1"><span class="h-2.5 w-2.5 rounded-full bg-amber-400"></span>Pedido en curso</span>
+            <span class="inline-flex items-center gap-1"><span class="h-2.5 w-2.5 rounded-full bg-green-500"></span>Listo para servir</span>
+            <span class="inline-flex items-center gap-1"><span class="h-2.5 w-2.5 rounded-full bg-sky-500"></span>Por cobrar</span>
+            <span class="inline-flex items-center gap-1"><span class="h-2.5 w-2.5 rounded-full bg-brasa-orange"></span>Llamando</span>
+          </p>
+        </div>
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
+          @for (m of mapaMesas(); track m.numero) {
+            <div class="flex flex-col rounded-2xl border-2 bg-white p-3 shadow-card" [class]="m.borde">
+              <div class="flex items-center justify-between">
+                <p class="font-heading text-base font-bold">Mesa {{ m.numero }}</p>
+                <span class="h-3 w-3 rounded-full" [class]="m.punto" aria-hidden="true"></span>
+              </div>
+              <div class="mb-3 mt-1">
+                <p class="text-xs font-medium text-brasa-black">{{ m.estado }}</p>
+                @if (m.saldo > 0) { <p class="text-xs text-brasa-muted">Debe {{ m.saldo | precioCop }}</p> }
+              </div>
+              <button
+                type="button"
+                class="mt-auto rounded-lg bg-brasa-black px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brasa-orange disabled:opacity-50"
+                [disabled]="tomando() !== null"
+                (click)="tomarPedido(m.numero)"
+              >
+                {{ tomando() === m.numero ? 'Abriendo menú...' : 'Tomar pedido' }}
+              </button>
+            </div>
+          } @empty {
+            <p class="text-sm text-brasa-muted">Cargando mesas...</p>
+          }
+        </div>
+      </section>
       @if (panel.error()) {
         <p class="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{{ panel.error() }}</p>
       }
@@ -46,7 +116,7 @@ import { PrecioCopPipe } from '../../shared/pipes/precio-cop.pipe';
         </div>
       </section>
 
-      <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <div class="grid grid-cols-1 gap-6 lg:grid-cols-2 2xl:grid-cols-4">
         <section aria-label="Pedidos por confirmar" class="rounded-2xl bg-brasa-gray-light p-4">
           <h2 class="mb-4 font-heading text-base font-semibold">Nuevos por confirmar ({{ pendientes().length }})</h2>
           <div class="flex flex-col gap-4">
@@ -56,6 +126,21 @@ import { PrecioCopPipe } from '../../shared/pipes/precio-cop.pipe';
                 <button type="button" class="rounded-xl border border-brasa-border px-3 py-2 text-sm font-semibold text-red-600" [disabled]="ocupado() === p.id" (click)="cancelar(p)">Cancelar</button>
               </app-tarjeta-pedido>
             } @empty { <p class="text-sm text-brasa-muted">Sin pedidos nuevos.</p> }
+          </div>
+        </section>
+
+        <section aria-label="Pedidos en cocina" class="rounded-2xl bg-brasa-gray-light p-4">
+          <h2 class="mb-4 font-heading text-base font-semibold">En cocina ({{ enCocina().length }})</h2>
+          <div class="flex flex-col gap-3">
+            @for (p of enCocina(); track p.id) {
+              <div class="rounded-xl bg-white px-4 py-3 shadow-card">
+                <div class="flex items-center justify-between gap-2">
+                  <p class="font-semibold">{{ p.numero }} · {{ p.mesa.tipo === 'llevar' ? 'Para llevar' : 'Mesa ' + p.mesa.numero }}</p>
+                  <span class="text-xs" [class]="minutos(p) > p.tiempoEstimadoMin ? 'font-semibold text-red-600' : 'text-brasa-muted'">{{ minutos(p) }} / {{ p.tiempoEstimadoMin }} min</span>
+                </div>
+                <p class="text-xs text-brasa-muted">{{ etiquetaEstado[p.estado] }} · {{ resumenItems(p) }}</p>
+              </div>
+            } @empty { <p class="text-sm text-brasa-muted">Nada en preparación.</p> }
           </div>
         </section>
 
@@ -85,23 +170,119 @@ import { PrecioCopPipe } from '../../shared/pipes/precio-cop.pipe';
           </div>
         </section>
       </div>
+
+      <div class="mt-8">
+        <app-panel-agotados />
+      </div>
     </section>
   `,
 })
 export class MeseroComponent implements OnInit, OnDestroy {
   protected readonly panel = inject(PanelPersonalService);
   private readonly notificaciones = inject(NotificacionesService);
+  private readonly api = inject(ApiService);
+  private readonly mesa = inject(MesaService);
+  private readonly router = inject(Router);
+  protected readonly sonido = inject(AvisoSonoroService);
   protected readonly ocupado = signal<string | null>(null);
   protected readonly ahora = signal(Date.now());
+  protected readonly aviso = signal('');
+  protected readonly tomando = signal<number | null>(null);
+  protected readonly etiquetaEstado = ETIQUETA_ESTADO;
+  private readonly mesas = signal<{ numero: number; activa: boolean }[]>([]);
   private reloj?: ReturnType<typeof setInterval>;
 
+  constructor() {
+    // Pedido nuevo o llamado de mesa en vivo: timbre (si está activado) y aviso visible.
+    // Al volver a esta pantalla no se repite el aviso de algo de hace rato.
+    effect(() => {
+      const p = this.panel.ultimoNuevo();
+      if (!p || Date.now() - Date.parse(p.creadoEn) > 120_000) return;
+      const lugar = p.mesa.tipo === 'llevar' ? 'Para llevar' : 'Mesa ' + p.mesa.numero;
+      untracked(() => this.avisar('Pedido nuevo ' + p.numero + ' · ' + lugar + ': confírmalo'));
+    });
+    effect(() => {
+      const s = this.panel.ultimoLlamado();
+      if (!s || Date.now() - Date.parse(s.creadaEn) > 120_000) return;
+      const lugar = s.mesa ? 'Mesa ' + s.mesa : 'Mostrador';
+      untracked(() => this.avisar(lugar + ' te llama: ' + this.motivo(s.motivo)));
+    });
+  }
+
   protected readonly pendientes = computed(() => this.panel.porEstado()['PENDIENTE'] ?? []);
+  protected readonly enCocina = computed(() => [
+    ...(this.panel.porEstado()['CONFIRMADO'] ?? []),
+    ...(this.panel.porEstado()['EN_PREPARACION'] ?? []),
+  ]);
   protected readonly listos = computed(() => this.panel.porEstado()['LISTO'] ?? []);
   protected readonly porCobrar = computed(() => this.panel.pedidos().filter((p) => p.saldo > 0));
+
+  /** Estado de cada mesa a partir de sus pedidos activos, saldos y llamados. */
+  protected readonly mapaMesas = computed<EstadoMesa[]>(() =>
+    this.mesas()
+      .filter((m) => m.activa)
+      .map((m) => {
+        const pedidos = this.panel.pedidos().filter((p) => p.mesa.tipo === 'mesa' && p.mesa.numero === m.numero);
+        const saldo = pedidos.reduce((s, p) => s + p.saldo, 0);
+        const llamando = this.panel.solicitudes().some((s) => s.mesa === m.numero);
+        const estados = pedidos.map((p) => p.estado);
+        let estado = 'Libre';
+        let punto = 'bg-gray-300';
+        if (estados.includes('LISTO')) {
+          estado = 'Pedido listo para servir';
+          punto = 'bg-green-500';
+        } else if (estados.includes('PENDIENTE')) {
+          estado = 'Pedido por confirmar';
+          punto = 'bg-amber-400';
+        } else if (estados.includes('CONFIRMADO') || estados.includes('EN_PREPARACION')) {
+          estado = 'En cocina';
+          punto = 'bg-amber-400';
+        } else if (saldo > 0) {
+          estado = 'Comiendo · por cobrar';
+          punto = 'bg-sky-500';
+        }
+        if (llamando) {
+          estado = 'Te está llamando';
+          punto = 'bg-brasa-orange';
+        }
+        const borde = llamando ? 'border-brasa-orange' : 'border-brasa-border';
+        return { numero: m.numero, estado, punto, saldo, borde };
+      }),
+  );
 
   ngOnInit(): void {
     this.panel.iniciar();
     this.reloj = setInterval(() => this.ahora.set(Date.now()), 30_000);
+    firstValueFrom(this.api.get<{ numero: number; activa: boolean }[]>('/mesas'))
+      .then((m) => this.mesas.set(m))
+      .catch(() => this.notificaciones.mostrar('No se pudieron cargar las mesas', 'error'));
+  }
+
+  private avisar(texto: string): void {
+    this.aviso.set(texto);
+    this.sonido.sonar();
+  }
+
+  protected minutos(p: Pedido): number {
+    return Math.max(0, Math.floor((this.ahora() - Date.parse(p.creadoEn)) / 60_000));
+  }
+
+  protected resumenItems(p: Pedido): string {
+    return p.items.map((i) => i.cantidad + '× ' + i.nombre).join(', ');
+  }
+
+  /** El mesero toma el pedido por el cliente: elige la mesa y abre el menú como si hubiera escaneado el QR. */
+  protected async tomarPedido(numero: number): Promise<void> {
+    this.tomando.set(numero);
+    try {
+      await this.mesa.usarCodigo(String(numero));
+      this.notificaciones.mostrar('Tomando pedido para la mesa ' + numero);
+      await this.router.navigate(['/menu']);
+    } catch (e) {
+      this.notificaciones.mostrar(mensajeError(e, 'No se pudo abrir la mesa'), 'error');
+    } finally {
+      this.tomando.set(null);
+    }
   }
 
   ngOnDestroy(): void {

@@ -309,6 +309,11 @@ class AdministracionTest(BaseApi):
         self.assertEqual(self.post('/api/productos', producto, **a).status_code, 201)
         self.assertEqual(self.patch('/api/productos/nueva-burger/disponibilidad', {'disponible': False}, **self.auth('COCINA')).status_code, 200)
         self.assertNotIn('nueva-burger', [p['id'] for p in self.http.get('/api/productos').data])
+        # Cocina y meseros ven también los agotados (para volver a activarlos); el cliente no.
+        for rol in ('COCINA', 'MESERO'):
+            todos = self.http.get('/api/productos/admin/todos', **self.auth(rol))
+            self.assertIn('nueva-burger', [p['id'] for p in todos.data])
+        self.assertIn(self.http.get('/api/productos/admin/todos', **self.auth('CLIENTE')).status_code, (401, 403))
         self.assertEqual(self.post('/api/productos/categorias', {'id': 'bebidas', 'nombre': 'Bebidas', 'orden': 3}, **a).status_code, 201)
 
     def test_mesas_qr_y_regeneracion(self):

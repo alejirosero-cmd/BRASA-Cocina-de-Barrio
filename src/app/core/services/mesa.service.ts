@@ -51,6 +51,11 @@ export class MesaService {
     this.estado.set({ tipo: 'llevar', numero: null, codigo: null });
   }
 
+  /** Quita la mesa de este equipo (lo usa el mesero después de tomar un pedido). */
+  olvidar(): void {
+    this.estado.set(ESTADO_INICIAL);
+  }
+
   establecerTipo(tipo: TipoPedido): void {
     if (tipo === 'llevar') this.paraLlevar();
     else if (this.estado().tipo === 'llevar') this.estado.set(ESTADO_INICIAL);

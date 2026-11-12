@@ -23,6 +23,10 @@ export class PanelPersonalService {
   readonly solicitudes = this.solicitudesSignal.asReadonly();
   readonly conectado = signal(false);
   readonly error = signal('');
+  /** Último pedido nuevo recibido en vivo (para el aviso sonoro de cocina y meseros). */
+  readonly ultimoNuevo = signal<Pedido | null>(null);
+  /** Último llamado de mesa recibido en vivo (para el aviso de meseros). */
+  readonly ultimoLlamado = signal<SolicitudMesero | null>(null);
 
   readonly porEstado = computed(() => {
     const grupos: Record<string, Pedido[]> = {};
@@ -96,6 +100,8 @@ export class PanelPersonalService {
   }
 
   private aplicarPedido(p: Pedido): void {
+    const esNuevo = p.estado === 'PENDIENTE' && !this.pedidosSignal().some((x) => x.id === p.id);
+    if (esNuevo) this.ultimoNuevo.set(p);
     this.pedidosSignal.update((lista) => {
       const resto = lista.filter((x) => x.id !== p.id);
       // Se conserva si sigue en curso o si se entregó pero falta cobrarlo.
@@ -106,6 +112,7 @@ export class PanelPersonalService {
 
   private aplicarSolicitud(s: SolicitudMesero): void {
     if (!this.auth.tieneRol('ADMIN', 'MESERO')) return;
+    if (s.estado === 'PENDIENTE' && !this.solicitudesSignal().some((x) => x.id === s.id)) this.ultimoLlamado.set(s);
     this.solicitudesSignal.update((lista) => {
       const resto = lista.filter((x) => x.id !== s.id);
       return s.estado === 'PENDIENTE' ? [...resto, s] : resto;

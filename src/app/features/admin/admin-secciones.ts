@@ -183,11 +183,56 @@ export class AdminResumenComponent extends SeccionAdmin implements OnInit {
               <td class="px-4 py-3">{{ etiquetas[p.estado] }}</td>
               <td class="px-4 py-3">{{ etiquetasPago[p.estadoPago] }}</td>
               <td class="px-4 py-3 text-right font-semibold">{{ p.resumen.total | precioCop }}</td>
-              <td class="px-4 py-3 text-right">
-                @if (p.facturaSolicitada) { <button type="button" class="${BOTON_SEC}" (click)="verFactura(p)">Factura</button> }
+              <td class="px-4 py-3 text-right whitespace-nowrap">
+                <button type="button" class="${BOTON_SEC}" [attr.aria-expanded]="abierto() === p.id" (click)="abierto.set(abierto() === p.id ? null : p.id)">
+                  {{ abierto() === p.id ? 'Ocultar' : 'Ver pedido' }}
+                </button>
+                @if (p.facturaSolicitada) { <button type="button" class="${BOTON_SEC} ml-1" (click)="verFactura(p)">Factura</button> }
                 @if (p.estado === 'PENDIENTE' || p.estado === 'CONFIRMADO') { <button type="button" class="${BOTON_SEC} ml-1 text-red-600" [disabled]="ocupado()" (click)="cancelar(p)">Cancelar</button> }
               </td>
             </tr>
+            @if (abierto() === p.id) {
+              <!-- Detalle: lo que pidió el cliente, con su personalización, y el desglose del cobro. -->
+              <tr class="border-b border-brasa-border bg-brasa-gray-light">
+                <td colspan="7" class="px-4 py-4">
+                  <div class="grid gap-6 md:grid-cols-[1fr_280px]">
+                    <ul class="space-y-3">
+                      @for (item of p.items; track item.id) {
+                        <li class="flex gap-3">
+                          <img [src]="item.imagenUrl" alt="" width="48" height="48" class="h-12 w-12 shrink-0 rounded-lg object-cover" />
+                          <div class="min-w-0 flex-1">
+                            <p class="font-semibold">
+                              {{ item.cantidad }} × {{ item.nombre }}
+                              @if (item.personalizacion.tamano) { <span class="font-normal text-brasa-muted">· {{ item.personalizacion.tamano.nombre }}</span> }
+                            </p>
+                            @if (item.personalizacion.extras.length) { <p class="text-xs text-brasa-muted">Extras: {{ nombres(item.personalizacion.extras) }}</p> }
+                            @if (item.personalizacion.salsas.length) { <p class="text-xs text-brasa-muted">Salsas: {{ nombres(item.personalizacion.salsas) }}</p> }
+                            @if (item.personalizacion.retirados.length) { <p class="text-xs font-semibold text-red-600">Sin {{ item.personalizacion.retirados.join(', ').toLowerCase() }}</p> }
+                            @if (item.personalizacion.instrucciones) { <p class="text-xs text-brasa-orange">Nota: {{ item.personalizacion.instrucciones }}</p> }
+                          </div>
+                          <p class="shrink-0 font-semibold">{{ item.precioUnitario * item.cantidad | precioCop }}</p>
+                        </li>
+                      }
+                      @if (p.notasCocina) {
+                        <li class="rounded-lg bg-brasa-orange/10 px-3 py-2 text-xs"><strong>Notas para cocina:</strong> {{ p.notasCocina }}</li>
+                      }
+                      @if (p.motivoCancelacion) {
+                        <li class="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700"><strong>Motivo de cancelación:</strong> {{ p.motivoCancelacion }}</li>
+                      }
+                    </ul>
+                    <dl class="${TARJETA} grid grid-cols-[1fr_auto] gap-x-4 gap-y-1.5 self-start p-4 text-sm">
+                      <dt class="text-brasa-muted">Subtotal</dt><dd class="text-right">{{ p.resumen.subtotal | precioCop }}</dd>
+                      @if (p.resumen.descuento) { <dt class="text-brasa-muted">Descuento{{ p.cupon ? ' (' + p.cupon + ')' : '' }}</dt><dd class="text-right text-green-700">−{{ p.resumen.descuento | precioCop }}</dd> }
+                      <dt class="text-brasa-muted">Impuestos</dt><dd class="text-right">{{ p.resumen.impuestos | precioCop }}</dd>
+                      @if (p.resumen.propina) { <dt class="text-brasa-muted">Propina</dt><dd class="text-right">{{ p.resumen.propina | precioCop }}</dd> }
+                      <dt class="border-t border-brasa-border pt-1.5 font-semibold">Total</dt><dd class="border-t border-brasa-border pt-1.5 text-right font-semibold">{{ p.resumen.total | precioCop }}</dd>
+                      <dt class="text-brasa-muted">Pagado</dt><dd class="text-right">{{ p.pagado | precioCop }}</dd>
+                      <dt class="text-brasa-muted">Saldo</dt><dd class="text-right" [class.font-semibold]="p.saldo > 0">{{ p.saldo | precioCop }}</dd>
+                    </dl>
+                  </div>
+                </td>
+              </tr>
+            }
           } @empty {
             <tr><td colspan="7" class="px-4 py-8 text-center text-brasa-muted">{{ cargando() ? 'Cargando...' : 'Sin pedidos' }}</td></tr>
           }
@@ -224,9 +269,15 @@ export class AdminPedidosComponent extends SeccionAdmin implements OnInit {
   protected readonly etiquetas = ETIQUETA_ESTADO;
   protected readonly etiquetasPago = ETIQUETA_ESTADO_PAGO;
   protected readonly listaEstados = Object.keys(ETIQUETA_ESTADO) as EstadoPedido[];
+  /** Pedido cuyo detalle está abierto. */
+  protected readonly abierto = signal<string | null>(null);
 
   ngOnInit(): void {
     this.recargar();
+  }
+
+  protected nombres(lista: { nombre: string }[]): string {
+    return lista.map((x) => x.nombre).join(', ');
   }
 
   protected recargar(): Promise<void> {
