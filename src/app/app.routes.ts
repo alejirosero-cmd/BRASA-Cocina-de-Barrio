@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { rolGuard } from './core/auth/rol.guard';
+import { rolGuard, sinRolGuard } from './core/auth/rol.guard';
 
 const auth = () => import('./features/auth/auth-paginas');
 const admin = () => import('./features/admin/admin-secciones');
@@ -8,11 +8,11 @@ export const routes: Routes = [
   // ---- Clientes (sin cuenta obligatoria) ----
   { path: '', loadComponent: () => import('./features/home/home.component').then((m) => m.HomeComponent), title: 'BRASA' },
   { path: 'm/:codigo', loadComponent: () => import('./features/mesa/entrada-qr.component').then((m) => m.EntradaQrComponent), title: 'Tu mesa - BRASA' },
-  { path: 'menu', loadComponent: () => import('./features/menu/menu.component').then((m) => m.MenuComponent), title: 'Menú - BRASA' },
-  { path: 'carrito', loadComponent: () => import('./features/cart/carrito.component').then((m) => m.CarritoComponent), title: 'Mi Carrito - BRASA' },
+  { path: 'menu', canActivate: [sinRolGuard('COCINA')], loadComponent: () => import('./features/menu/menu.component').then((m) => m.MenuComponent), title: 'Menú - BRASA' },
+  { path: 'carrito', canActivate: [sinRolGuard('COCINA')], loadComponent: () => import('./features/cart/carrito.component').then((m) => m.CarritoComponent), title: 'Mi Carrito - BRASA' },
   { path: 'pedido', loadComponent: () => import('./features/orders/seguimiento.component').then((m) => m.SeguimientoComponent), title: 'Seguimiento del pedido - BRASA' },
   { path: 'pedido/:id', loadComponent: () => import('./features/orders/seguimiento.component').then((m) => m.SeguimientoComponent), title: 'Seguimiento del pedido - BRASA' },
-  { path: 'pagar/:id', loadComponent: () => import('./features/checkout/checkout.component').then((m) => m.CheckoutComponent), title: 'Pagar la cuenta - BRASA' },
+  { path: 'pagar/:id', canActivate: [sinRolGuard('COCINA', 'MESERO')], loadComponent: () => import('./features/checkout/checkout.component').then((m) => m.CheckoutComponent), title: 'Pagar la cuenta - BRASA' },
   { path: 'pago/resultado', loadComponent: () => import('./features/pagos/pago-resultado.component').then((m) => m.PagoResultadoComponent), title: 'Resultado del pago - BRASA' },
   { path: 'pago/simulado', loadComponent: () => import('./features/pagos/pago-simulado.component').then((m) => m.PagoSimuladoComponent), title: 'Pasarela de pruebas - BRASA' },
   { path: 'historial', loadComponent: () => import('./features/history/historial.component').then((m) => m.HistorialComponent), title: 'Historial de pedidos - BRASA' },

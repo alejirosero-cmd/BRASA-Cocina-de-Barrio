@@ -22,7 +22,7 @@ import { RouterLink } from '@angular/router';
         <span class="font-heading text-xl font-bold tracking-tight text-brasa-black">BRASA</span>
         @if (mostrarEslogan()) {
           <span class="text-[11px] font-medium uppercase tracking-[0.18em] text-brasa-muted">
-            Cocina Artesanal
+            Cocina de Barrio
           </span>
         }
       </span>
