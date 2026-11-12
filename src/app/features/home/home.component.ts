@@ -1,17 +1,22 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { mensajeError } from '../../core/services/api.service';
-import { Router } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { Router, RouterLink } from '@angular/router';
+import { catchError, of } from 'rxjs';
+import { ApiService, mensajeError } from '../../core/services/api.service';
 import { MesaService } from '../../core/services/mesa.service';
 import { NotificacionesService } from '../../core/services/notificaciones.service';
+import { ProductosService } from '../../core/services/productos.service';
 import { TipoPedido } from '../../models/mesa.model';
+import { PrecioCopPipe } from '../../shared/pipes/precio-cop.pipe';
 
-interface Beneficio {
+interface Paso {
   titulo: string;
   descripcion: string;
 }
 
 @Component({
   selector: 'app-home',
+  imports: [RouterLink, PrecioCopPipe],
   template: `
     <section class="relative overflow-hidden bg-brasa-gray-light">
       <div
@@ -181,55 +186,116 @@ interface Beneficio {
             <div
               class="absolute -right-3 top-6 hidden flex-col items-center rounded-2xl border border-brasa-border bg-white px-4 py-3 shadow-soft md:flex lg:-right-6"
             >
-              <span class="font-heading text-2xl font-bold text-brasa-orange">4.9</span>
-              <span class="text-xs text-brasa-muted">★ valoración</span>
+              <!-- Dato real: promedio de las calificaciones; si aún no hay, el tamaño del menú. -->
+              @if (resumen()?.promedio; as promedio) {
+                <span class="font-heading text-2xl font-bold text-brasa-orange">{{ promedio }}</span>
+                <span class="text-xs text-brasa-muted">★ {{ resumen()!.total }} {{ resumen()!.total === 1 ? 'opinión' : 'opiniones' }}</span>
+              } @else {
+                <span class="font-heading text-2xl font-bold text-brasa-orange">{{ productos.lista().length }}</span>
+                <span class="text-xs text-brasa-muted">platos en el menú</span>
+              }
             </div>
           </div>
         </div>
       </div>
     </section>
 
-    <section class="mx-auto max-w-[1760px] px-5 py-16 md:px-10 lg:py-20 xl:px-20">
-      <div class="max-w-2xl">
-        <h2 class="font-heading text-2xl font-bold tracking-tight text-brasa-black sm:text-3xl">
-          Pedir desde la web tiene sus ventajas
-        </h2>
-        <p class="mt-3 text-base text-brasa-muted">
-          Más rápido, más claro y a tu ritmo. Así funciona BRASA.
-        </p>
+    <!-- Categorías con foto: cada una abre el menú filtrado. -->
+    <section class="mx-auto max-w-[1760px] px-5 pt-16 md:px-10 lg:pt-20 xl:px-20" aria-labelledby="titulo-categorias">
+      <div class="flex items-end justify-between gap-4">
+        <div>
+          <h2 id="titulo-categorias" class="font-heading text-2xl font-bold tracking-tight text-brasa-black sm:text-3xl">
+            Explora el menú
+          </h2>
+          <p class="mt-2 text-base text-brasa-muted">
+            {{ productos.lista().length }} platos en {{ categoriasConFoto().length }} categorías, hechos al momento.
+          </p>
+        </div>
+        <a routerLink="/menu" class="hidden shrink-0 text-sm font-semibold text-brasa-orange hover:text-brasa-orange-dark sm:inline">
+          Ver todo el menú →
+        </a>
       </div>
 
-      <div class="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        @for (beneficio of beneficios; track beneficio.titulo) {
-          <article
-            class="group rounded-2xl border border-brasa-border bg-white p-6 shadow-card transition hover:-translate-y-1 hover:shadow-soft"
+      <div class="sin-barra -mx-5 mt-8 flex snap-x scroll-px-5 gap-4 overflow-x-auto px-5 pb-2 md:mx-0 md:grid md:grid-cols-4 md:overflow-visible md:px-0">
+        @for (c of categoriasConFoto(); track c.id) {
+          <a
+            [routerLink]="['/menu']"
+            [queryParams]="{ categoria: c.id }"
+            class="group relative block w-36 shrink-0 snap-start overflow-hidden rounded-2xl bg-brasa-black shadow-card md:w-auto"
           >
-            <span
-              class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-brasa-orange/10 text-brasa-orange transition group-hover:bg-brasa-orange group-hover:text-white"
-            >
-              @switch (beneficio.titulo) {
-                @case ('Sin esperas') {
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" />
-                  </svg>
-                }
-                @case ('Personaliza a tu gusto') {
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M12 3v18M3 12h18" />
-                  </svg>
-                }
-                @default {
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M12 2 2 7l10 5 10-5-10-5ZM2 17l10 5 10-5M2 12l10 5 10-5" />
-                  </svg>
-                }
-              }
+            <img
+              [src]="c.foto"
+              alt=""
+              width="300"
+              height="360"
+              loading="lazy"
+              class="aspect-[5/6] w-full object-cover opacity-90 md:aspect-[16/10] transition duration-300 group-hover:scale-105 group-hover:opacity-100"
+            />
+            <span class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent" aria-hidden="true"></span>
+            <span class="absolute inset-x-0 bottom-0 p-3">
+              <span class="block font-heading text-sm font-semibold leading-tight text-white md:text-base">{{ c.nombre }}</span>
+              <span class="text-xs text-white/75">{{ c.cantidad }} {{ c.cantidad === 1 ? 'plato' : 'platos' }}</span>
             </span>
-            <h3 class="font-heading text-lg font-semibold text-brasa-black">{{ beneficio.titulo }}</h3>
-            <p class="mt-2 text-sm leading-relaxed text-brasa-muted">{{ beneficio.descripcion }}</p>
-          </article>
+          </a>
         }
       </div>
+    </section>
+
+    <!-- Los más vendidos: abren directamente el detalle para personalizar. -->
+    <section class="mx-auto max-w-[1760px] px-5 pt-16 md:px-10 lg:pt-20 xl:px-20" aria-labelledby="titulo-favoritos">
+      <h2 id="titulo-favoritos" class="font-heading text-2xl font-bold tracking-tight text-brasa-black sm:text-3xl">
+        Los favoritos de la casa
+      </h2>
+      <p class="mt-2 text-base text-brasa-muted">Lo que más piden nuestros clientes.</p>
+
+      <div class="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        @for (p of masVendidos(); track p.id) {
+          <a
+            [routerLink]="['/menu']"
+            [queryParams]="{ producto: p.id }"
+            class="group flex items-center gap-4 rounded-2xl border border-brasa-border bg-white p-3 shadow-card transition hover:-translate-y-0.5 hover:shadow-soft"
+          >
+            <img
+              [src]="p.imagenUrl"
+              [alt]="p.nombre"
+              width="112"
+              height="112"
+              loading="lazy"
+              class="h-24 w-24 shrink-0 rounded-xl object-cover sm:h-28 sm:w-28"
+            />
+            <span class="min-w-0 flex-1">
+              <span class="block font-heading text-base font-semibold text-brasa-black">{{ p.nombre }}</span>
+              <span class="mt-1 line-clamp-2 text-sm text-brasa-muted">{{ p.descripcion }}</span>
+              <span class="mt-2 flex items-center justify-between gap-2">
+                <span class="font-heading text-base font-bold text-brasa-black">{{ p.precio | precioCop }}</span>
+                <span class="rounded-lg bg-brasa-orange/10 px-2.5 py-1 text-xs font-semibold text-brasa-orange transition group-hover:bg-brasa-orange group-hover:text-white">
+                  Pedir
+                </span>
+              </span>
+            </span>
+          </a>
+        }
+      </div>
+    </section>
+
+    <!-- Cómo funciona, en tres pasos. -->
+    <section class="mx-auto max-w-[1760px] px-5 py-16 md:px-10 lg:py-20 xl:px-20" aria-labelledby="titulo-pasos">
+      <h2 id="titulo-pasos" class="font-heading text-2xl font-bold tracking-tight text-brasa-black sm:text-3xl">
+        Así de fácil
+      </h2>
+      <p class="mt-2 text-base text-brasa-muted">Sin esperar la carta, sin levantar la mano y sin esperar la cuenta.</p>
+
+      <ol class="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
+        @for (paso of pasos; track paso.titulo; let i = $index) {
+          <li class="relative rounded-2xl border border-brasa-border bg-white p-6 shadow-card">
+            <span class="flex h-10 w-10 items-center justify-center rounded-full bg-brasa-orange font-heading text-base font-bold text-white">
+              {{ i + 1 }}
+            </span>
+            <h3 class="mt-4 font-heading text-lg font-semibold text-brasa-black">{{ paso.titulo }}</h3>
+            <p class="mt-2 text-sm leading-relaxed text-brasa-muted">{{ paso.descripcion }}</p>
+          </li>
+        }
+      </ol>
     </section>
 
     <section class="mx-auto max-w-[1760px] px-5 pb-20 md:px-10 xl:px-20">
@@ -244,16 +310,16 @@ interface Beneficio {
             Explora el menú completo y arma tu pedido favorito.
           </p>
         </div>
-        <button
-          type="button"
+        <!-- Ver el menú no exige mesa: el código solo se pide al enviar el pedido. -->
+        <a
+          routerLink="/menu"
           class="inline-flex shrink-0 items-center gap-2 rounded-xl bg-brasa-orange px-7 py-4 font-heading text-base font-semibold text-white transition hover:bg-brasa-orange-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-brasa-orange focus-visible:ring-offset-2 focus-visible:ring-offset-brasa-black"
-          (click)="verMenu()"
         >
           Ver Menú
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M5 12h14M12 5l7 7-7 7" />
           </svg>
-        </button>
+        </a>
       </div>
     </section>
   `,
@@ -262,24 +328,47 @@ export class HomeComponent {
   private readonly mesa = inject(MesaService);
   private readonly notificaciones = inject(NotificacionesService);
   private readonly router = inject(Router);
+  private readonly api = inject(ApiService);
+  protected readonly productos = inject(ProductosService);
 
-  protected readonly beneficios: Beneficio[] = [
+  protected readonly pasos: Paso[] = [
     {
-      titulo: 'Sin esperas',
-      descripcion:
-        'Envía tu pedido directo a cocina y evita levantar la mano para ordenar.',
+      titulo: 'Escanea el QR de tu mesa',
+      descripcion: 'Cada mesa tiene su código. Tu pedido llega a cocina con el número de tu mesa.',
     },
     {
-      titulo: 'Personaliza a tu gusto',
-      descripcion:
-        'Elige tamaño, extras, salsas y retira ingredientes antes de enviar tu pedido.',
+      titulo: 'Arma tu pedido a tu gusto',
+      descripcion: 'Elige tamaño, extras y salsas, o quita ingredientes. Ves el precio antes de enviarlo.',
     },
     {
-      titulo: 'Todo bajo control',
-      descripcion:
-        'Sigue el estado de tu pedido y llama al mesero cuando lo necesites.',
+      titulo: 'Síguelo y paga desde el celular',
+      descripcion: 'Mira cuando cocina lo prepara, llama al mesero si lo necesitas y paga sin esperar la cuenta.',
     },
   ];
+
+  /** Categorías del menú con la foto de un producto representativo. */
+  protected readonly categoriasConFoto = computed(() => {
+    const lista = this.productos.lista();
+    return this.productos
+      .categorias()
+      .filter((c) => c.id !== 'populares')
+      .map((c) => {
+        const deLaCategoria = lista.filter((p) => p.categoria === c.id);
+        const foto = (deLaCategoria.find((p) => p.etiquetas.includes('mas-vendido')) ?? deLaCategoria[0])?.imagenUrl;
+        return { id: c.id, nombre: c.nombre, cantidad: deLaCategoria.length, foto };
+      })
+      .filter((c) => c.cantidad > 0 && c.foto);
+  });
+
+  protected readonly masVendidos = computed(() =>
+    this.productos.lista().filter((p) => p.etiquetas.includes('mas-vendido')).slice(0, 6),
+  );
+
+  /** Promedio real de calificaciones (si el servidor no responde, simplemente no se muestra). */
+  protected readonly resumen = toSignal(
+    this.api.get<{ promedio: number | null; total: number }>('/calificaciones/resumen').pipe(catchError(() => of(null))),
+    { initialValue: null },
+  );
 
   protected readonly tipo = signal<TipoPedido>(this.mesa.tipo());
   protected readonly codigo = signal('');

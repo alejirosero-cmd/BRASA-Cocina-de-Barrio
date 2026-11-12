@@ -80,9 +80,18 @@ html {
 
 @media print {
   header,
+  footer,
   app-boton-mesero,
   app-notificaciones {
     display: none !important;
+  }
+}
+
+/* Franjas que se deslizan con el dedo (categorías, filtros) sin barra de desplazamiento visible. */
+@utility sin-barra {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
   }
 }
 

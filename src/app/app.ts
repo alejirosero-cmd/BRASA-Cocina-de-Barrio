@@ -6,6 +6,7 @@ import { LlamarMeseroComponent } from './shared/components/llamar-mesero/llamar-
 import { CambiarMesaComponent } from './shared/components/cambiar-mesa/cambiar-mesa.component';
 import { NotificacionesComponent } from './shared/components/notificaciones/notificaciones.component';
 import { AuthService } from './core/services/auth.service';
+import { SiteFooterComponent } from './shared/components/footer/footer.component';
 
 @Component({
   selector: 'app-root',
@@ -16,6 +17,7 @@ import { AuthService } from './core/services/auth.service';
     LlamarMeseroComponent,
     CambiarMesaComponent,
     NotificacionesComponent,
+    SiteFooterComponent,
   ],
   templateUrl: './app.html',
   styleUrl: './app.css',

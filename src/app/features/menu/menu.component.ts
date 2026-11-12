@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import {
@@ -41,7 +41,7 @@ import { FavoritosService } from '../../core/services/favoritos.service';
     LucideHeart,
   ],
   template: `
-    <section class="mx-auto max-w-[1760px] px-5 py-10 md:px-10 xl:px-20">
+    <section class="mx-auto max-w-[1760px] px-5 pb-5 pt-8 md:px-10 md:pt-10 xl:px-20">
       <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 class="font-heading text-3xl font-bold tracking-tight text-brasa-black sm:text-4xl">
@@ -68,11 +68,15 @@ import { FavoritosService } from '../../core/services/favoritos.service';
           />
         </div>
 
-        <div class="flex flex-wrap items-center gap-2">
+        <div
+          class="sin-barra -mx-5 flex items-center gap-2 overflow-x-auto px-5 pb-1 md:-mx-10 md:px-10 lg:mx-0 lg:flex-wrap lg:overflow-visible lg:px-0 lg:pb-0"
+          role="group"
+          aria-label="Filtros del menú"
+        >
           @for (etiqueta of opcionesEtiqueta; track etiqueta.id) {
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition"
+              class="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-sm transition"
               [class]="
                 estaActiva(etiqueta.id)
                   ? 'border-brasa-orange bg-brasa-orange/10 text-brasa-black'
@@ -103,42 +107,66 @@ import { FavoritosService } from '../../core/services/favoritos.service';
           }
           <button
             type="button"
-            class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition"
+            class="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-sm transition"
+            [attr.aria-pressed]="soloFavoritos()"
             [class]="soloFavoritos() ? 'border-brasa-orange bg-brasa-orange/10 text-brasa-black' : 'border-brasa-border text-brasa-muted hover:border-brasa-muted hover:text-brasa-black'"
             (click)="soloFavoritos.set(!soloFavoritos())"
           >
             <svg lucideHeart [size]="15"></svg>
             Favoritos
           </button>
-          <span class="flex items-center gap-1 text-xs text-brasa-muted sm:text-sm">
-            <svg lucideSlidersHorizontal [size]="16"></svg>
-            Filtros activos: {{ productos.estadoFiltros().etiquetas.length + (soloFavoritos() ? 1 : 0) }}
-          </span>
+          @if (filtrosActivos() > 0) {
+            <button
+              type="button"
+              class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-xs font-semibold text-brasa-orange hover:text-brasa-orange-dark sm:text-sm"
+              (click)="limpiar()"
+            >
+              <svg lucideSlidersHorizontal [size]="16"></svg>
+              Quitar filtros ({{ filtrosActivos() }})
+            </button>
+          }
         </div>
       </div>
+    </section>
 
-      <nav class="mt-6 flex flex-wrap gap-2" aria-label="Categorías del menú">
+    <!-- Categorías: franja fija bajo el encabezado, con foto, que se desliza en el celular. -->
+    <nav
+      class="sticky top-20 z-30 border-y border-brasa-border bg-white/95 backdrop-blur"
+      aria-label="Categorías del menú"
+    >
+      <div
+        class="sin-barra mx-auto flex max-w-[1760px] snap-x scroll-px-5 gap-2 overflow-x-auto px-5 py-3 md:scroll-px-10 md:px-10 xl:scroll-px-20 xl:px-20"
+      >
         @for (categoria of productos.categorias(); track categoria.id) {
           <button
             type="button"
-            class="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition"
+            class="group inline-flex shrink-0 snap-start items-center gap-2.5 rounded-full py-1.5 pl-1.5 pr-4 text-sm font-semibold whitespace-nowrap transition"
             [class]="
               productos.estadoFiltros().categoria === categoria.id
                 ? 'bg-brasa-black text-white shadow-soft'
                 : 'border border-brasa-border bg-white text-brasa-muted hover:border-brasa-muted hover:text-brasa-black'
             "
             [attr.aria-pressed]="productos.estadoFiltros().categoria === categoria.id"
-            (click)="productos.establecerCategoria(categoria.id)"
+            (click)="elegirCategoria(categoria.id)"
           >
+            @if (fotoCategoria()[categoria.id]; as foto) {
+              <img [src]="foto" alt="" width="32" height="32" class="h-8 w-8 rounded-full object-cover" />
+            } @else {
+              <span class="flex h-8 w-8 items-center justify-center rounded-full bg-brasa-orange text-white">
+                <svg lucideFlame [size]="16"></svg>
+              </span>
+            }
             {{ categoria.id === 'populares' ? 'Todo el menú' : categoria.nombre }}
             <span class="text-xs font-normal opacity-70">{{ conteoPorCategoria()[categoria.id] ?? 0 }}</span>
           </button>
         }
-      </nav>
+      </div>
+    </nav>
 
-      <div class="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-12">
+    <section id="productos" class="mx-auto max-w-[1760px] scroll-mt-36 px-5 pb-28 pt-8 md:px-10 lg:pb-12 xl:px-20">
+      <div class="grid grid-cols-1 gap-8 lg:grid-cols-12">
         <div class="lg:col-span-8 xl:col-span-8">
-          <div class="flex items-center justify-between">
+          <div class="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 class="font-heading text-xl font-semibold text-brasa-black">
                 {{ tituloCategoria() }}
@@ -182,13 +210,37 @@ import { FavoritosService } from '../../core/services/favoritos.service';
               <button
                 type="button"
                 class="mt-2 rounded-xl border border-brasa-border px-5 py-2.5 text-sm font-semibold text-brasa-black transition hover:bg-brasa-gray-light"
-                (click)="productos.limpiarFiltros(); soloFavoritos.set(false)"
+                (click)="limpiar()"
               >
                 Limpiar filtros
               </button>
             </div>
+          } @else if (secciones().length > 0) {
+            <!-- "Todo el menú" sin filtros: una sección por categoría, como la carta de un restaurante. -->
+            @for (grupo of secciones(); track grupo.id) {
+              <section class="mt-10 first:mt-6 scroll-mt-40" [attr.aria-labelledby]="'seccion-' + grupo.id">
+                <div class="flex items-baseline justify-between gap-3 border-b border-brasa-border pb-3">
+                  <h3 [id]="'seccion-' + grupo.id" class="font-heading text-lg font-bold text-brasa-black sm:text-xl">
+                    {{ grupo.nombre }}
+                    <span class="ml-1 text-sm font-medium text-brasa-muted">{{ grupo.productos.length }}</span>
+                  </h3>
+                  <button
+                    type="button"
+                    class="shrink-0 text-sm font-semibold text-brasa-orange hover:text-brasa-orange-dark"
+                    (click)="elegirCategoria(grupo.id)"
+                  >
+                    Ver solo {{ grupo.nombre.toLowerCase() }}
+                  </button>
+                </div>
+                <div class="mt-5 grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                  @for (producto of grupo.productos; track producto.id) {
+                    <app-producto-card [producto]="producto" (abrirDetalle)="abrirDetalle(producto)"></app-producto-card>
+                  }
+                </div>
+              </section>
+            }
           } @else {
-            <div class="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            <div class="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
               @for (producto of productosMostrados(); track producto.id) {
                 <app-producto-card
                   [producto]="producto"
@@ -200,7 +252,7 @@ import { FavoritosService } from '../../core/services/favoritos.service';
         </div>
 
         <div class="lg:col-span-4 xl:col-span-4">
-          <div class="hidden lg:block lg:sticky lg:top-24">
+          <div class="hidden lg:block lg:sticky lg:top-40">
             <app-carrito-panel></app-carrito-panel>
           </div>
         </div>
@@ -277,6 +329,55 @@ export class MenuComponent {
     { id: 'para-compartir', titulo: 'Para compartir' },
   ];
 
+  /** Foto de cada categoría: la del primer producto (preferiblemente un más vendido). */
+  protected readonly fotoCategoria = computed(() => {
+    const lista = this.productos.lista();
+    const fotos: Record<string, string> = {};
+    for (const c of this.productos.categorias()) {
+      const deLaCategoria = lista.filter((p) => p.categoria === c.id);
+      const elegido = deLaCategoria.find((p) => p.etiquetas.includes('mas-vendido')) ?? deLaCategoria[0];
+      if (elegido) fotos[c.id] = elegido.imagenUrl;
+    }
+    return fotos;
+  });
+
+  protected readonly filtrosActivos = computed(
+    () => this.productos.estadoFiltros().etiquetas.length + (this.soloFavoritos() ? 1 : 0),
+  );
+
+  /**
+   * Con "Todo el menú" y sin búsqueda ni filtros, el menú se muestra por secciones (una por categoría).
+   * En cualquier otro caso se devuelve una lista vacía y se usa la cuadrícula normal.
+   */
+  protected readonly secciones = computed(() => {
+    const { categoria, busqueda } = this.productos.estadoFiltros();
+    if (categoria !== 'populares' || busqueda.trim() || this.filtrosActivos() > 0 || this.orden() !== 'recomendados') {
+      return [];
+    }
+    const lista = this.productosMostrados();
+    return this.productos
+      .categorias()
+      .filter((c) => c.id !== 'populares')
+      .map((c) => ({ id: c.id, nombre: c.nombre, productos: lista.filter((p) => p.categoria === c.id) }))
+      .filter((g) => g.productos.length > 0);
+  });
+
+  /** Enlaces desde el inicio: /menu?categoria=pollo o /menu?producto=doble-brasa */
+  readonly categoriaInicial = input<string | undefined>(undefined, { alias: 'categoria' });
+  readonly productoInicial = input<string | undefined>(undefined, { alias: 'producto' });
+
+  constructor() {
+    effect(() => {
+      const categoria = this.categoriaInicial();
+      if (categoria) untracked(() => this.productos.establecerCategoria(categoria));
+    });
+    effect(() => {
+      const id = this.productoInicial();
+      const encontrado = id ? this.productos.obtenerPorId(id) : undefined;
+      if (encontrado) untracked(() => this.abrirDetalle(encontrado));
+    });
+  }
+
   protected tituloCategoria(): string {
     const actual = this.productos.estadoFiltros().categoria;
     if (actual === 'populares') return 'Todo el menú';
@@ -285,6 +386,18 @@ export class MenuComponent {
 
   protected estaActiva(id: EtiquetaProducto): boolean {
     return this.productos.estadoFiltros().etiquetas.includes(id);
+  }
+
+  protected elegirCategoria(id: string): void {
+    this.productos.establecerCategoria(id);
+    // Si el cliente ya bajó por la lista, vuelve al inicio de los productos (bajo la franja de categorías).
+    const seccion = document.getElementById('productos');
+    if (seccion && seccion.getBoundingClientRect().top < 0) seccion.scrollIntoView({ block: 'start' });
+  }
+
+  protected limpiar(): void {
+    this.productos.limpiarFiltros();
+    this.soloFavoritos.set(false);
   }
 
   protected abrirDetalle(producto: Producto): void {
