@@ -2,7 +2,7 @@ from rest_framework import serializers
 
 from nucleo.serializadores import Estricto
 
-ETIQUETAS = ('vegetariano', 'sin-gluten', 'mas-vendido')
+ETIQUETAS = ('vegetariano', 'sin-gluten', 'mas-vendido', 'picante', 'para-compartir')
 SLUG = r'^[a-z0-9]+(?:-[a-z0-9]+)*$'
 MSJ_SLUG = 'Usa solo minúsculas, números y guiones (ej. brasa-original)'
 

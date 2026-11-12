@@ -3,10 +3,12 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import {
   LucideFlame,
+  LucideFlameKindling,
   LucideHeart,
   LucideLeaf,
   LucideSearch,
   LucideSlidersHorizontal,
+  LucideUsers,
   LucideWheatOff,
 } from '@lucide/angular';
 import { CarritoService } from '../../core/services/carrito.service';
@@ -34,6 +36,8 @@ import { FavoritosService } from '../../core/services/favoritos.service';
     LucideLeaf,
     LucideWheatOff,
     LucideFlame,
+    LucideFlameKindling,
+    LucideUsers,
     LucideHeart,
   ],
   template: `
@@ -87,6 +91,12 @@ import { FavoritosService } from '../../core/services/favoritos.service';
                 @case ('mas-vendido') {
                   <svg lucideFlame [size]="15" class="text-brasa-orange"></svg>
                 }
+                @case ('picante') {
+                  <svg lucideFlameKindling [size]="15" class="text-red-600"></svg>
+                }
+                @case ('para-compartir') {
+                  <svg lucideUsers [size]="15" class="text-sky-600"></svg>
+                }
               }
               {{ etiqueta.titulo }}
             </button>
@@ -117,9 +127,11 @@ import { FavoritosService } from '../../core/services/favoritos.service';
                 ? 'bg-brasa-black text-white shadow-soft'
                 : 'border border-brasa-border bg-white text-brasa-muted hover:border-brasa-muted hover:text-brasa-black'
             "
+            [attr.aria-pressed]="productos.estadoFiltros().categoria === categoria.id"
             (click)="productos.establecerCategoria(categoria.id)"
           >
-            {{ categoria.nombre }}
+            {{ categoria.id === 'populares' ? 'Todo el menú' : categoria.nombre }}
+            <span class="text-xs font-normal opacity-70">{{ conteoPorCategoria()[categoria.id] ?? 0 }}</span>
           </button>
         }
       </nav>
@@ -133,11 +145,25 @@ import { FavoritosService } from '../../core/services/favoritos.service';
               </h2>
               <p class="mt-1 text-sm text-brasa-muted">
                 Mostrando {{ productosMostrados().length }} productos
+                @if (productos.cargando()) {
+                  <span role="status"> · actualizando menú...</span>
+                }
               </p>
             </div>
-            @if (productos.cargando()) {
-              <span class="text-xs text-brasa-muted" role="status">Actualizando menú...</span>
-            }
+            <label class="flex items-center gap-2 text-sm text-brasa-muted">
+              Ordenar
+              <select
+                class="rounded-xl border border-brasa-border bg-white px-3 py-2 text-sm text-brasa-black outline-none focus-visible:ring-2 focus-visible:ring-brasa-orange"
+                [ngModel]="orden()"
+                (ngModelChange)="orden.set($event)"
+                aria-label="Ordenar productos"
+              >
+                <option value="recomendados">Recomendados</option>
+                <option value="menor-precio">Menor precio</option>
+                <option value="mayor-precio">Mayor precio</option>
+                <option value="mas-rapido">Más rápido</option>
+              </select>
+            </label>
           </div>
           @if (productos.error()) {
             <p class="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" role="alert">
@@ -216,29 +242,45 @@ export class MenuComponent {
   protected readonly productoSeleccionado = signal<Producto | null>(null);
   protected readonly detalleAbierto = signal(false);
   protected readonly soloFavoritos = signal(false);
+  protected readonly orden = signal<'recomendados' | 'menor-precio' | 'mayor-precio' | 'mas-rapido'>('recomendados');
 
   protected readonly productosMostrados = computed(() => {
-    const lista = this.productos.productosFiltrados();
-    if (!this.soloFavoritos()) return lista;
-    return lista.filter((p) => this.favoritos.esFavorito(p.id));
+    let lista = this.productos.productosFiltrados();
+    if (this.soloFavoritos()) lista = lista.filter((p) => this.favoritos.esFavorito(p.id));
+    switch (this.orden()) {
+      case 'menor-precio':
+        return [...lista].sort((a, b) => a.precio - b.precio);
+      case 'mayor-precio':
+        return [...lista].sort((a, b) => b.precio - a.precio);
+      case 'mas-rapido':
+        return [...lista].sort((a, b) => a.tiempoPreparacionMin - b.tiempoPreparacionMin);
+      default:
+        // Recomendados: los más vendidos primero, sin alterar el resto del orden.
+        return [...lista].sort(
+          (a, b) => Number(b.etiquetas.includes('mas-vendido')) - Number(a.etiquetas.includes('mas-vendido')),
+        );
+    }
   });
 
-  protected readonly opcionesEtiqueta: { id: EtiquetaProducto; titulo: string; icon?: unknown }[] = [
+  /** Cuántos productos hay en cada categoría (para mostrarlo en los botones). */
+  protected readonly conteoPorCategoria = computed(() => {
+    const conteo: Record<string, number> = { populares: this.productos.lista().length };
+    for (const p of this.productos.lista()) conteo[p.categoria] = (conteo[p.categoria] ?? 0) + 1;
+    return conteo;
+  });
+
+  protected readonly opcionesEtiqueta: { id: EtiquetaProducto; titulo: string }[] = [
+    { id: 'mas-vendido', titulo: 'Más vendidos' },
     { id: 'vegetariano', titulo: 'Vegetariano' },
     { id: 'sin-gluten', titulo: 'Sin gluten' },
-    { id: 'mas-vendido', titulo: 'Más vendidos' },
+    { id: 'picante', titulo: 'Picante' },
+    { id: 'para-compartir', titulo: 'Para compartir' },
   ];
 
   protected tituloCategoria(): string {
     const actual = this.productos.estadoFiltros().categoria;
-    const map: Record<string, string> = {
-      populares: 'Populares',
-      hamburguesas: 'Hamburguesas',
-      acompanamientos: 'Acompañamientos',
-      bebidas: 'Bebidas',
-      postres: 'Postres',
-    };
-    return map[actual] || 'Catálogo';
+    if (actual === 'populares') return 'Todo el menú';
+    return this.productos.categorias().find((c) => c.id === actual)?.nombre ?? 'Catálogo';
   }
 
   protected estaActiva(id: EtiquetaProducto): boolean {

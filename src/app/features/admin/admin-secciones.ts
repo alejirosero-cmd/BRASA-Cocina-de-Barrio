@@ -424,7 +424,7 @@ export class AdminProductosComponent extends SeccionAdmin implements OnInit {
   protected readonly form = signal<typeof PRODUCTO_VACIO | null>(null);
   protected readonly editando = signal<string | null>(null);
   protected readonly errorForm = signal('');
-  protected readonly etiquetasDisponibles = ['vegetariano', 'sin-gluten', 'mas-vendido'];
+  protected readonly etiquetasDisponibles = ['vegetariano', 'sin-gluten', 'mas-vendido', 'picante', 'para-compartir'];
   protected ingredientesTexto = '';
   protected opcionesTexto = '';
   protected nuevaCategoria = { id: '', nombre: '', orden: 10 };

@@ -1,12 +1,20 @@
 import { Component, inject, input, output } from '@angular/core';
-import { LucideFlame, LucideHeart, LucideLeaf, LucideSettings, LucideWheatOff } from '@lucide/angular';
+import {
+  LucideFlame,
+  LucideFlameKindling,
+  LucideHeart,
+  LucideLeaf,
+  LucideSettings,
+  LucideUsers,
+  LucideWheatOff,
+} from '@lucide/angular';
 import { Producto } from '../../../models/producto.model';
 import { PrecioCopPipe } from '../../pipes/precio-cop.pipe';
 import { FavoritosService } from '../../../core/services/favoritos.service';
 
 @Component({
   selector: 'app-producto-card',
-  imports: [PrecioCopPipe, LucideSettings, LucideLeaf, LucideWheatOff, LucideFlame, LucideHeart],
+  imports: [PrecioCopPipe, LucideSettings, LucideLeaf, LucideWheatOff, LucideFlame, LucideFlameKindling, LucideUsers, LucideHeart],
   template: `
     <article
       class="group flex h-full flex-col overflow-hidden rounded-2xl border border-brasa-border bg-white shadow-card transition duration-200 hover:-translate-y-1 hover:shadow-soft"
@@ -28,8 +36,9 @@ import { FavoritosService } from '../../../core/services/favoritos.service';
         />
 
         @if (producto().etiquetas.length > 0) {
-          <div class="absolute left-3 top-3 flex flex-wrap gap-1.5">
-            @for (etiqueta of producto().etiquetas; track etiqueta) {
+          <div class="absolute left-3 right-14 top-3 flex flex-wrap gap-1.5">
+            <!-- Máximo dos insignias para no tapar la foto. -->
+            @for (etiqueta of producto().etiquetas.slice(0, 2); track etiqueta) {
               <span
                 class="inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-semibold text-brasa-black shadow-card"
               >
@@ -45,6 +54,14 @@ import { FavoritosService } from '../../../core/services/favoritos.service';
                   @case ('mas-vendido') {
                     <svg lucideFlame [size]="13" class="text-brasa-orange"></svg>
                     Más vendido
+                  }
+                  @case ('picante') {
+                    <svg lucideFlameKindling [size]="13" class="text-red-600"></svg>
+                    Picante
+                  }
+                  @case ('para-compartir') {
+                    <svg lucideUsers [size]="13" class="text-sky-600"></svg>
+                    Para compartir
                   }
                 }
               </span>

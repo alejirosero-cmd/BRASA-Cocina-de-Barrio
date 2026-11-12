@@ -1,11 +1,12 @@
-export type CategoriaId = 'populares' | 'hamburguesas' | 'acompanamientos' | 'bebidas' | 'postres';
+/** Slug de la categoría. Las categorías las define el administrador; "populares" muestra todo. */
+export type CategoriaId = string;
 
 export interface Categoria {
   id: CategoriaId;
   nombre: string;
 }
 
-export type EtiquetaProducto = 'vegetariano' | 'sin-gluten' | 'mas-vendido';
+export type EtiquetaProducto = 'vegetariano' | 'sin-gluten' | 'mas-vendido' | 'picante' | 'para-compartir';
 
 export interface OpcionExtra {
   id: string;

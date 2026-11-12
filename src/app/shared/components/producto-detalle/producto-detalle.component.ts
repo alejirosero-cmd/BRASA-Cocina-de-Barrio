@@ -81,7 +81,7 @@ import { PrecioCopPipe } from '../../pipes/precio-cop.pipe';
                         (click)="alternarExtra(extra)"
                       >
                         <span class="text-sm text-brasa-black">{{ extra.nombre }}</span>
-                        <span class="text-sm font-semibold text-brasa-orange">+{{ extra.precio | precioCop }}</span>
+                        <span class="text-sm font-semibold text-brasa-orange">{{ extra.precio === 0 ? 'Sin costo' : '+' + (extra.precio | precioCop) }}</span>
                       </button>
                     }
                   </div>
