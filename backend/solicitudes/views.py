@@ -7,7 +7,7 @@ from nucleo import eventos
 from nucleo.dominio import MOTIVOS_SOLICITUD
 from nucleo.excepciones import Conflicto, NoEncontrado, SolicitudInvalida
 from nucleo.limites import Limite, LimiteGeneral
-from nucleo.permisos import usuario_de
+from nucleo.permisos import solo_clientes, usuario_de
 from nucleo.serializadores import Estricto, validar
 from nucleo.vistas import VistaPublica, vista_roles
 from pedidos.servicios import obtener_con_acceso
@@ -41,6 +41,7 @@ class SolicitudesVista(VistaPublica):
         return Response([s.publica() for s in pendientes])
 
     def post(self, request):
+        solo_clientes(request, 'Llamar al mesero')
         d = validar(CrearSolicitud, request.data)
         if d.get('codigoMesa'):
             mesa = Mesa.objects.filter(codigo=d['codigoMesa'].upper(), activa=True).first()

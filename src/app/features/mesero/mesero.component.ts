@@ -5,6 +5,7 @@ import { firstValueFrom } from 'rxjs';
 import { LucideBell, LucideBellRing, LucideVolume2, LucideVolumeX } from '@lucide/angular';
 import { ApiService, mensajeError } from '../../core/services/api.service';
 import { AvisoSonoroService } from '../../core/services/aviso-sonoro.service';
+import { AuthService } from '../../core/services/auth.service';
 import { MesaService } from '../../core/services/mesa.service';
 import { NotificacionesService } from '../../core/services/notificaciones.service';
 import { PanelPersonalService } from '../../core/services/panel-personal.service';
@@ -164,7 +165,11 @@ interface EstadoMesa {
                   <p class="font-semibold">{{ p.numero }} · {{ p.mesa.tipo === 'llevar' ? 'Para llevar' : 'Mesa ' + p.mesa.numero }}</p>
                   <p class="text-sm text-brasa-muted">Saldo {{ p.saldo | precioCop }}</p>
                 </div>
-                <button type="button" class="rounded-xl border border-brasa-black px-3 py-2 text-sm font-semibold" [disabled]="ocupado() === p.id" (click)="cobrar(p)">Cobrado en efectivo/datáfono</button>
+                @if (puedeCobrar()) {
+                  <button type="button" class="rounded-xl border border-brasa-black px-3 py-2 text-sm font-semibold" [disabled]="ocupado() === p.id" (click)="abrirCobro(p)">Registrar pago</button>
+                } @else {
+                  <span class="text-right text-xs text-brasa-muted">Lo cobra la caja</span>
+                }
               </div>
             } @empty { <p class="text-sm text-brasa-muted">Todas las cuentas activas están pagadas.</p> }
           </div>
@@ -175,6 +180,54 @@ interface EstadoMesa {
         <app-panel-agotados />
       </div>
     </section>
+
+    @if (cobro(); as c) {
+      <!-- Registrar un pago recibido en la mesa. El servidor revisa el permiso, el saldo y los duplicados. -->
+      <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="titulo-cobro">
+        <form class="w-full max-w-md rounded-2xl bg-white p-6 shadow-soft" (submit)="$event.preventDefault(); confirmarCobro()">
+          <h2 id="titulo-cobro" class="font-heading text-lg font-semibold">Registrar pago · {{ c.pedido.numero }}</h2>
+          <p class="text-sm text-brasa-muted">{{ c.pedido.mesa.tipo === 'llevar' ? 'Para llevar' : 'Mesa ' + c.pedido.mesa.numero }} · saldo {{ c.pedido.saldo | precioCop }}</p>
+
+          <div class="mt-4 grid grid-cols-2 gap-2" role="radiogroup" aria-label="Método de pago">
+            @for (m of metodos; track m.id) {
+              <button type="button" role="radio" [attr.aria-checked]="c.metodo === m.id"
+                class="rounded-xl border-2 px-3 py-2.5 text-sm font-semibold transition"
+                [class]="c.metodo === m.id ? 'border-brasa-orange bg-brasa-orange/5' : 'border-brasa-border text-brasa-muted'"
+                (click)="actualizarCobro({ metodo: m.id })">{{ m.titulo }}</button>
+            }
+          </div>
+
+          <label class="mt-4 block text-sm"><span class="mb-1 block font-medium">Valor a cobrar</span>
+            <input type="number" min="1" [max]="c.pedido.saldo" class="w-full rounded-xl border border-brasa-border px-3 py-2" [value]="c.monto"
+              (input)="actualizarCobro({ monto: +$any($event.target).value })" />
+            <span class="mt-1 block text-xs text-brasa-muted">Por defecto el saldo completo. Para dividir la cuenta, escribe solo una parte.</span>
+          </label>
+
+          @if (c.metodo === 'EFECTIVO') {
+            <label class="mt-4 block text-sm"><span class="mb-1 block font-medium">Efectivo recibido (opcional)</span>
+              <input type="number" min="1" class="w-full rounded-xl border border-brasa-border px-3 py-2" [value]="c.recibido ?? ''"
+                (input)="actualizarCobro({ recibido: $any($event.target).value ? +$any($event.target).value : null })" />
+            </label>
+            @if (c.recibido && c.recibido >= c.monto) { <p class="mt-2 text-sm font-semibold text-green-700">Cambio: {{ c.recibido - c.monto | precioCop }}</p> }
+          } @else {
+            <label class="mt-4 block text-sm"><span class="mb-1 block font-medium">Código de aprobación del comprobante</span>
+              <input type="text" maxlength="12" autocomplete="off" class="w-full rounded-xl border border-brasa-border px-3 py-2 uppercase tracking-widest" [value]="c.codigo"
+                (input)="actualizarCobro({ codigo: $any($event.target).value.trim() })" placeholder="Ej. 123456" />
+              <span class="mt-1 block text-xs text-brasa-muted">Solo registra la tarjeta si el datáfono imprimió el comprobante APROBADO.</span>
+            </label>
+          }
+
+          @if (c.error) { <p class="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{{ c.error }}</p> }
+
+          <div class="mt-6 flex gap-2">
+            <button type="button" class="flex-1 rounded-xl border border-brasa-border px-4 py-2.5 text-sm font-semibold" (click)="cobro.set(null)">Cancelar</button>
+            <button type="submit" class="flex-1 rounded-xl bg-brasa-orange px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50" [disabled]="c.enviando">
+              {{ c.enviando ? 'Registrando...' : 'Registrar ' + (c.monto | precioCop) }}
+            </button>
+          </div>
+        </form>
+      </div>
+    }
   `,
 })
 export class MeseroComponent implements OnInit, OnDestroy {
@@ -183,6 +236,7 @@ export class MeseroComponent implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
   private readonly mesa = inject(MesaService);
   private readonly router = inject(Router);
+  private readonly auth = inject(AuthService);
   protected readonly sonido = inject(AvisoSonoroService);
   protected readonly ocupado = signal<string | null>(null);
   protected readonly ahora = signal(Date.now());
@@ -321,8 +375,44 @@ export class MeseroComponent implements OnInit, OnDestroy {
     return this.accion(p.id, () => this.panel.cambiarEstado(p.id, 'CANCELADO', motivo.slice(0, 200)), 'Pedido cancelado');
   }
 
-  protected cobrar(p: Pedido) {
-    if (!confirm(`¿Confirmas que recibiste el pago de ${p.numero}?`)) return Promise.resolve();
-    return this.accion(p.id, () => this.panel.cobrarEfectivo(p.id), 'Pago registrado');
+  protected readonly metodos = [
+    { id: 'EFECTIVO' as const, titulo: 'Efectivo' },
+    { id: 'TARJETA' as const, titulo: 'Tarjeta (datáfono)' },
+  ];
+  /** El servidor decide; esto solo muestra u oculta el botón. */
+  protected readonly puedeCobrar = computed(() => this.auth.usuario()?.puedeCobrar === true);
+  protected readonly cobro = signal<{
+    pedido: Pedido; metodo: 'EFECTIVO' | 'TARJETA'; monto: number; recibido: number | null;
+    codigo: string; clave: string; error: string; enviando: boolean;
+  } | null>(null);
+
+  protected abrirCobro(p: Pedido): void {
+    // Una clave por intento: si la red falla y se reintenta, el servidor no duplica el cobro.
+    this.cobro.set({ pedido: p, metodo: 'EFECTIVO', monto: p.saldo, recibido: null, codigo: '', clave: crypto.randomUUID(), error: '', enviando: false });
+  }
+
+  protected actualizarCobro(cambio: Partial<{ metodo: 'EFECTIVO' | 'TARJETA'; monto: number; recibido: number | null; codigo: string }>): void {
+    this.cobro.update((c) => (c ? { ...c, ...cambio, error: '' } : c));
+  }
+
+  protected async confirmarCobro(confirmarDuplicado = false): Promise<void> {
+    const c = this.cobro();
+    if (!c) return;
+    this.cobro.set({ ...c, enviando: true, error: '' });
+    try {
+      const r = await this.panel.registrarCobro({
+        pedidoId: c.pedido.id, metodo: c.metodo, monto: c.monto, clave: c.clave,
+        ...(c.metodo === 'EFECTIVO' && c.recibido ? { efectivoRecibido: c.recibido } : {}),
+        ...(c.metodo === 'TARJETA' && c.codigo ? { codigoAutorizacion: c.codigo } : {}),
+        ...(confirmarDuplicado ? { confirmarDuplicado: true } : {}),
+      });
+      this.cobro.set(null);
+      this.notificaciones.mostrar(r.cambio ? 'Pago registrado. Cambio: $' + r.cambio.toLocaleString('es-CO') : 'Pago registrado');
+      this.panel.recargar();
+    } catch (e) {
+      const mensaje = mensajeError(e, 'No se pudo registrar el pago');
+      if (!confirmarDuplicado && mensaje.includes('confírmalo') && confirm(mensaje)) return this.confirmarCobro(true);
+      this.cobro.update((x) => (x ? { ...x, enviando: false, error: mensaje } : x));
+    }
   }
 }

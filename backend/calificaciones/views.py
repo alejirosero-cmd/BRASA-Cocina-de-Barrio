@@ -5,7 +5,7 @@ from rest_framework.response import Response
 
 from nucleo.excepciones import Conflicto
 from nucleo.models import registrar
-from nucleo.permisos import usuario_de
+from nucleo.permisos import solo_clientes, usuario_de
 from nucleo.serializadores import Estricto, validar
 from nucleo.vistas import VistaPublica, entero, vista_roles
 from pedidos.servicios import obtener_con_acceso
@@ -45,6 +45,7 @@ class CalificacionesVista(VistaPublica):
         return super().get_permissions()
 
     def post(self, request):
+        solo_clientes(request, 'Calificar el servicio')
         d = validar(CrearCalificacion, request.data)
         usuario = usuario_de(request)
         pedido = obtener_con_acceso(d['pedidoId'], request.headers.get('X-Pedido-Token'), usuario)

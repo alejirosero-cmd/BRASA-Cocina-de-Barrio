@@ -2,6 +2,7 @@
 Pruebas de integración de la API completa (base de datos de pruebas propia, sin servicios externos).
 Cubren autenticación, roles, pedidos, meseros, pagos, calificaciones, administración y seguridad.
 """
+import uuid
 import os
 from urllib.parse import parse_qs, urlparse
 
@@ -41,7 +42,7 @@ class BaseApi(TestCase):
         Cupon.objects.create(codigo='BRASA10', porcentaje=10, usos_max=1)
         self.tokens = {}
         for rol in ('ADMIN', 'COCINA', 'MESERO'):
-            u = Usuario(email=f'{rol.lower()}@t.co', nombre=rol, rol=rol)
+            u = Usuario(email=f'{rol.lower()}@t.co', nombre=rol, rol=rol, puede_cobrar=rol == 'MESERO')
             u.establecer_password(CLAVE)
             u.save()
             self.tokens[rol] = self.login(f'{rol.lower()}@t.co').data['token']
@@ -71,6 +72,11 @@ class BaseApi(TestCase):
     def entregar(self, pedido_id):
         for rol, estado in [('MESERO', 'CONFIRMADO'), ('COCINA', 'EN_PREPARACION'), ('COCINA', 'LISTO'), ('MESERO', 'ENTREGADO')]:
             self.assertEqual(self.patch(f'/api/pedidos/{pedido_id}/estado', {'estado': estado}, **self.auth(rol)).status_code, 200)
+
+    def cobrar(self, pedido_id, rol='MESERO', **extra):
+        """Cobro en la mesa (efectivo por defecto) con una clave de registro nueva."""
+        datos = {'pedidoId': pedido_id, 'metodo': 'EFECTIVO', 'clave': uuid.uuid4().hex, **extra}
+        return self.post('/api/pagos/presencial', datos, **self.auth(rol))
 
     def cliente(self, email='cliente@t.co'):
         r = self.post('/api/auth/registro', {'email': email, 'nombre': 'Cliente', 'password': CLAVE})
@@ -265,13 +271,13 @@ class PagosTest(BaseApi):
 
     def test_efectivo_solo_lo_registra_el_personal(self):
         pedido, _ = self.crear_pedido()
-        self.assertEqual(self.post('/api/pagos/efectivo', {'pedidoId': pedido['id']}, **self.auth(self.cliente())).status_code, 403)
-        self.assertEqual(self.post('/api/pagos/efectivo', {'pedidoId': pedido['id']}, **self.auth('MESERO')).status_code, 201)
+        self.assertEqual(self.cobrar(pedido['id'], rol=self.cliente()).status_code, 403)
+        self.assertEqual(self.cobrar(pedido['id']).status_code, 201)
         self.assertEqual(self.http.get(f'/api/pedidos/{pedido["id"]}', **self.auth('MESERO')).data['estadoPago'], 'PAGADO')
 
     def test_cancelar_pedido_pagado_deja_reembolso_pendiente(self):
         pedido, _ = self.crear_pedido()
-        self.post('/api/pagos/efectivo', {'pedidoId': pedido['id']}, **self.auth('MESERO'))
+        self.cobrar(pedido['id'])
         ruta = f'/api/pedidos/{pedido["id"]}/estado'
         self.assertEqual(self.patch(ruta, {'estado': 'CANCELADO'}, **self.auth('MESERO')).status_code, 409)
         self.assertEqual(self.patch(ruta, {'estado': 'CANCELADO'}, **self.auth('ADMIN')).status_code, 200)
@@ -336,13 +342,13 @@ class AdministracionTest(BaseApi):
 
     def test_reportes_y_auditoria(self):
         pedido, _ = self.crear_pedido()
-        self.post('/api/pagos/efectivo', {'pedidoId': pedido['id']}, **self.auth('MESERO'))
+        self.cobrar(pedido['id'])
         self.login('admin@t.co', 'incorrecta-123')
         r = self.http.get('/api/reportes/resumen', **self.auth('ADMIN')).data
         self.assertGreater(r['ventasTotales'], 0)
         self.assertEqual(r['masVendidos'][0]['nombre'], 'Brasa Original')
         acciones = set(RegistroAuditoria.objects.values_list('accion', flat=True))
-        self.assertTrue({'sesion.inicio', 'sesion.fallida', 'pago.efectivo'} <= acciones)
+        self.assertTrue({'sesion.inicio', 'sesion.fallida', 'pago.presencial'} <= acciones)
 
 
 class TiempoRealTest(BaseApi):

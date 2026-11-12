@@ -92,7 +92,12 @@ export class PanelPersonalService {
   }
 
   async cobrarEfectivo(pedidoId: string): Promise<void> {
-    await firstValueFrom(this.api.post('/pagos/efectivo', { pedidoId }));
+    await firstValueFrom(this.api.post('/pagos/presencial', { pedidoId, metodo: 'EFECTIVO', clave: crypto.randomUUID() }));
+  }
+
+  /** Cobro en la mesa con método, valor y clave de registro (no se duplica al reintentar). */
+  async registrarCobro(datos: Record<string, unknown>): Promise<{ cambio: number | null }> {
+    return firstValueFrom(this.api.post<{ cambio: number | null }>('/pagos/presencial', datos));
   }
 
   async marcarAgotado(productoId: string): Promise<void> {

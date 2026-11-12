@@ -13,6 +13,8 @@ class Usuario(models.Model):
     password_hash = models.CharField(max_length=255)
     rol = models.CharField(max_length=10, choices=ROLES, default='CLIENTE', db_index=True)
     activo = models.BooleanField(default=True)
+    # Permiso de un mesero para registrar cobros en la mesa (efectivo o datáfono). Lo da el administrador.
+    puede_cobrar = models.BooleanField(default=False)
     # Se incrementa al cambiar contraseña o rol: invalida los tokens emitidos antes.
     version_sesion = models.IntegerField(default=0)
     creado_en = models.DateTimeField(auto_now_add=True)
@@ -29,7 +31,8 @@ class Usuario(models.Model):
         return check_password(clave, self.password_hash)
 
     def publico(self) -> dict:
-        return {'id': self.id, 'email': self.email, 'nombre': self.nombre, 'rol': self.rol}
+        return {'id': self.id, 'email': self.email, 'nombre': self.nombre, 'rol': self.rol,
+                'puedeCobrar': self.rol == 'ADMIN' or (self.rol == 'MESERO' and self.puede_cobrar)}
 
     def __str__(self) -> str:
         return f'{self.email} ({self.rol})'

@@ -56,7 +56,8 @@ class Command(BaseCommand):
             return
         definida = bool(clave) and len(clave) >= 10
         clave = clave if definida else secrets.token_urlsafe(12)
-        u = Usuario(email=email, nombre=nombre, rol=rol)
+        # El mesero de demostración puede cobrar en la mesa; el administrador lo puede quitar.
+        u = Usuario(email=email, nombre=nombre, rol=rol, puede_cobrar=rol == 'MESERO')
         u.establecer_password(clave)
         u.save()
         # Se muestra una sola vez y no se guarda en ningún archivo.

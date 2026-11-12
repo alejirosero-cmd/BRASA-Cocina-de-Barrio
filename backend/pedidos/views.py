@@ -1,10 +1,11 @@
 from django.utils.dateparse import parse_datetime
+from rest_framework import exceptions
 from rest_framework.response import Response
 
 from nucleo import eventos
 from nucleo.dominio import ESTADOS_PEDIDO
 from nucleo.limites import Limite, LimiteGeneral
-from nucleo.permisos import usuario_de
+from nucleo.permisos import solo_clientes, usuario_de
 from nucleo.serializadores import validar
 from nucleo.vistas import VistaPublica, entero, vista_roles
 
@@ -38,7 +39,11 @@ class PedidosVista(VistaPublica):
         return super().get_permissions()
 
     def post(self, request):
-        return Response(servicios.crear(validar(s.CrearPedido, request.data), usuario_de(request)), status=201)
+        usuario = usuario_de(request)
+        # La cocina prepara los pedidos, no los toma. El mesero sí puede tomarlo en la mesa.
+        if usuario is not None and usuario.rol == 'COCINA':
+            raise exceptions.PermissionDenied('La cocina no toma pedidos: los toma el cliente con el QR o el mesero en la mesa')
+        return Response(servicios.crear(validar(s.CrearPedido, request.data), usuario), status=201)
 
     def get(self, request):
         estado = request.query_params.get('estado')
@@ -103,11 +108,13 @@ class EstadoVista(vista_roles('ADMIN', 'MESERO', 'COCINA')):
 
 class CancelarVista(VistaPublica):
     def post(self, request, id):
+        solo_clientes(request, 'Cancelar desde el seguimiento')
         return Response(servicios.cancelar_por_cliente(id, _token(request), usuario_de(request)), status=201)
 
 
 class PropinaVista(VistaPublica):
     def patch(self, request, id):
+        solo_clientes(request, 'Elegir la propina')
         porcentaje = validar(s.Propina, request.data)['porcentaje']
         return Response(servicios.cambiar_propina(id, porcentaje, _token(request), usuario_de(request)))
 
@@ -121,6 +128,7 @@ class FacturaVista(VistaPublica):
         return super().get_permissions()
 
     def post(self, request, id):
+        solo_clientes(request, 'Pedir la factura electrónica')
         d = validar(s.DatosFactura, request.data)
         return Response(servicios.guardar_datos_factura(id, d, _token(request), usuario_de(request)), status=201)
 

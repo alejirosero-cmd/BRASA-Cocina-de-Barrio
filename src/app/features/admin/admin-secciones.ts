@@ -316,7 +316,16 @@ interface PagoAdmin {
   estado: string;
   metodo: string | null;
   creadoEn: string;
+  registradoPor: string | null;
+  codigoAutorizacion: string | null;
+  anuladoPor: string | null;
+  anuladoEn: string | null;
+  motivoAnulacion: string | null;
+  cierreId: string | null;
 }
+
+/** Cobros hechos en la mesa (efectivo o datáfono): se anulan aquí; los pagos en línea se reembolsan. */
+const PRESENCIALES = ['efectivo', 'datafono'];
 
 @Component({
   selector: 'app-admin-pagos',
@@ -324,35 +333,65 @@ interface PagoAdmin {
   template: `
     @if (error()) { <p class="text-sm text-red-700" role="alert">{{ error() }}</p> }
     <div class="${TARJETA} overflow-x-auto">
-      <table class="w-full min-w-[820px] text-left text-sm">
+      <table class="w-full min-w-[980px] text-left text-sm">
         <thead class="border-b border-brasa-border text-xs uppercase text-brasa-muted">
-          <tr><th class="px-4 py-3">Fecha</th><th class="px-4 py-3">Pedido</th><th class="px-4 py-3">Proveedor</th><th class="px-4 py-3">Referencia</th><th class="px-4 py-3">Estado</th><th class="px-4 py-3 text-right">Monto</th><th class="px-4 py-3"></th></tr>
+          <tr><th class="px-4 py-3">Fecha y hora</th><th class="px-4 py-3">Pedido</th><th class="px-4 py-3">Método</th><th class="px-4 py-3">Registró</th><th class="px-4 py-3">Referencia</th><th class="px-4 py-3">Estado</th><th class="px-4 py-3 text-right">Monto</th><th class="px-4 py-3"></th></tr>
         </thead>
         <tbody>
           @for (p of pagos(); track p.id) {
-            <tr class="border-b border-brasa-border last:border-0">
-              <td class="px-4 py-3">{{ p.creadoEn | date: 'd MMM, h:mm a' }}</td>
+            <tr class="border-b border-brasa-border last:border-0 align-top">
+              <td class="px-4 py-3 whitespace-nowrap">{{ p.creadoEn | date: 'd MMM, h:mm a' }}</td>
               <td class="px-4 py-3 font-semibold">{{ p.pedidoNumero }}</td>
-              <td class="px-4 py-3">{{ p.proveedor }}{{ p.metodo ? ' · ' + p.metodo : '' }}</td>
-              <td class="px-4 py-3 font-mono text-xs">{{ p.referencia }}</td>
-              <td class="px-4 py-3"><span class="rounded-full px-2.5 py-1 text-xs font-semibold" [class]="clase(p.estado)">{{ p.estado }}</span></td>
+              <td class="px-4 py-3">{{ metodo(p) }}</td>
+              <td class="px-4 py-3">{{ p.registradoPor ?? 'Cliente (en línea)' }}</td>
+              <td class="px-4 py-3 font-mono text-xs">
+                {{ p.referencia }}
+                @if (p.codigoAutorizacion) { <span class="block text-brasa-muted">Aprobación: {{ p.codigoAutorizacion }}</span> }
+              </td>
+              <td class="px-4 py-3">
+                <span class="rounded-full px-2.5 py-1 text-xs font-semibold" [class]="clase(p.estado)">{{ p.estado }}</span>
+                @if (p.cierreId) { <span class="ml-1 text-xs text-brasa-muted">· en cierre</span> }
+                @if (p.motivoAnulacion) { <span class="mt-1 block text-xs text-red-700">{{ p.anuladoPor }}: {{ p.motivoAnulacion }}</span> }
+              </td>
               <td class="px-4 py-3 text-right font-semibold">{{ p.monto | precioCop }}</td>
-              <td class="px-4 py-3 text-right">
-                @if (p.estado === 'APROBADO') { <button type="button" class="${BOTON_SEC}" [disabled]="ocupado()" (click)="accion(p, 'reembolso', '¿Marcar este pago para reembolso?')">Reembolsar</button> }
+              <td class="px-4 py-3 text-right whitespace-nowrap">
+                @if (p.estado === 'APROBADO' && esPresencial(p) && !p.cierreId) { <button type="button" class="${BOTON_SEC} text-red-600" [disabled]="ocupado()" (click)="anular(p)">Anular</button> }
+                @if (p.estado === 'APROBADO' && !esPresencial(p)) { <button type="button" class="${BOTON_SEC}" [disabled]="ocupado()" (click)="accion(p, 'reembolso', '¿Marcar este pago para reembolso?')">Reembolsar</button> }
                 @if (p.estado === 'REEMBOLSO_SOLICITADO') { <button type="button" class="${BOTON_SEC}" [disabled]="ocupado()" (click)="accion(p, 'reembolsado', '¿Confirmas que ya devolviste el dinero en el panel del proveedor?')">Confirmar reembolso</button> }
               </td>
             </tr>
           } @empty {
-            <tr><td colspan="7" class="px-4 py-8 text-center text-brasa-muted">{{ cargando() ? 'Cargando...' : 'Sin pagos' }}</td></tr>
+            <tr><td colspan="8" class="px-4 py-8 text-center text-brasa-muted">{{ cargando() ? 'Cargando...' : 'Sin pagos' }}</td></tr>
           }
         </tbody>
       </table>
     </div>
-    <p class="mt-3 text-xs text-brasa-muted">Los reembolsos con tarjeta o Nequi se ejecutan en el panel de Wompi; aquí se registra el seguimiento.</p>
+    <p class="mt-3 text-xs text-brasa-muted">
+      Cada pago guarda quién lo registró, la fecha y hora, el método y el valor. Los cobros en la mesa se anulan con motivo (antes del cierre de caja);
+      los pagos en línea se reembolsan en el panel de Wompi y aquí se registra el seguimiento.
+    </p>
   `,
 })
 export class AdminPagosComponent extends SeccionAdmin implements OnInit {
   protected readonly pagos = signal<PagoAdmin[]>([]);
+
+  protected esPresencial(p: PagoAdmin): boolean {
+    return PRESENCIALES.includes(p.proveedor);
+  }
+
+  protected metodo(p: PagoAdmin): string {
+    if (p.proveedor === 'efectivo') return 'Efectivo';
+    if (p.proveedor === 'datafono') return 'Datáfono (tarjeta)';
+    return 'En línea' + (p.metodo ? ' · ' + p.metodo : '');
+  }
+
+  protected async anular(p: PagoAdmin): Promise<void> {
+    const motivo = prompt(`Motivo para anular el cobro de ${p.pedidoNumero}:`);
+    if (!motivo) return;
+    if (await this.ejecutar(() => firstValueFrom(this.api.patch(`/pagos/${p.id}/anular`, { motivo: motivo.slice(0, 200) })), 'Cobro anulado: el saldo del pedido vuelve a quedar pendiente')) {
+      this.recargar();
+    }
+  }
 
   ngOnInit(): void {
     this.recargar();
@@ -659,7 +698,7 @@ export class AdminMesasComponent extends SeccionAdmin implements OnInit {
 }
 
 // ------------------------------------------------------------------ Usuarios
-interface UsuarioAdmin { id: string; email: string; nombre: string; rol: string; activo: boolean }
+interface UsuarioAdmin { id: string; email: string; nombre: string; rol: string; activo: boolean; puedeCobrar?: boolean }
 
 @Component({
   selector: 'app-admin-usuarios',
@@ -677,7 +716,7 @@ interface UsuarioAdmin { id: string; email: string; nombre: string; rol: string;
     @if (error()) { <p class="text-sm text-red-700" role="alert">{{ error() }}</p> }
     <div class="${TARJETA} overflow-x-auto">
       <table class="w-full min-w-[640px] text-left text-sm">
-        <thead class="border-b border-brasa-border text-xs uppercase text-brasa-muted"><tr><th class="px-4 py-3">Nombre</th><th class="px-4 py-3">Correo</th><th class="px-4 py-3">Rol</th><th class="px-4 py-3">Estado</th></tr></thead>
+        <thead class="border-b border-brasa-border text-xs uppercase text-brasa-muted"><tr><th class="px-4 py-3">Nombre</th><th class="px-4 py-3">Correo</th><th class="px-4 py-3">Rol</th><th class="px-4 py-3">Cobros en la mesa</th><th class="px-4 py-3">Estado</th></tr></thead>
         <tbody>
           @for (u of usuarios(); track u.id) {
             <tr class="border-b border-brasa-border last:border-0">
@@ -689,6 +728,17 @@ interface UsuarioAdmin { id: string; email: string; nombre: string; rol: string;
                 </select>
               </td>
               <td class="px-4 py-3">
+                @switch (u.rol) {
+                  @case ('MESERO') {
+                    <button type="button" class="${BOTON_SEC}" [class.text-green-700]="u.puedeCobrar" [disabled]="ocupado()" (click)="cambiar(u, { puedeCobrar: !u.puedeCobrar })">
+                      {{ u.puedeCobrar ? 'Puede cobrar · quitar' : 'No cobra · permitir' }}
+                    </button>
+                  }
+                  @case ('ADMIN') { <span class="text-xs text-brasa-muted">Sí (caja)</span> }
+                  @default { <span class="text-xs text-brasa-muted">No</span> }
+                }
+              </td>
+              <td class="px-4 py-3">
                 <button type="button" class="${BOTON_SEC}" [disabled]="ocupado()" (click)="cambiar(u, { activo: !u.activo })">{{ u.activo ? 'Activo · desactivar' : 'Inactivo · activar' }}</button>
               </td>
             </tr>
@@ -696,7 +746,7 @@ interface UsuarioAdmin { id: string; email: string; nombre: string; rol: string;
         </tbody>
       </table>
     </div>
-    <p class="mt-3 text-xs text-brasa-muted">Cambiar el rol o desactivar un usuario cierra sus sesiones abiertas de inmediato.</p>
+    <p class="mt-3 text-xs text-brasa-muted">Cambiar el rol, el permiso de cobro o desactivar un usuario cierra sus sesiones abiertas de inmediato.</p>
   `,
 })
 export class AdminUsuariosComponent extends SeccionAdmin implements OnInit {
@@ -722,6 +772,149 @@ export class AdminUsuariosComponent extends SeccionAdmin implements OnInit {
   protected async cambiar(u: UsuarioAdmin, cambio: Partial<UsuarioAdmin>): Promise<void> {
     await this.ejecutar(() => firstValueFrom(this.api.patch(`/usuarios/${u.id}`, cambio)), 'Usuario actualizado');
     this.recargar();
+  }
+}
+
+// ------------------------------------------------------------------ Caja: resumen del turno y cierre
+interface ResumenCaja {
+  desde: string | null;
+  totalEfectivo: number;
+  totalDatafono: number;
+  totalEnLinea: number;
+  total: number;
+  cantidadPagos: number;
+  anulados: number;
+  porPersona: { nombre: string; total: number }[];
+  cuentasAbiertas: { id: string; numero: string; mesa: number | null; saldo: number }[];
+}
+interface CierreCajaAdmin {
+  id: string;
+  realizadoPor: string;
+  desde: string | null;
+  hasta: string;
+  totalEfectivo: number;
+  totalDatafono: number;
+  totalEnLinea: number;
+  total: number;
+  cantidadPagos: number;
+  efectivoContado: number;
+  diferencia: number;
+  notas: string;
+}
+
+@Component({
+  selector: 'app-admin-caja',
+  imports: [FormsModule, PrecioCopPipe, DatePipe],
+  template: `
+    @if (error()) { <p class="mb-3 text-sm text-red-700" role="alert">{{ error() }}</p> }
+    @if (resumen(); as r) {
+      <p class="mb-3 text-sm text-brasa-muted">Turno actual: {{ r.desde ? 'desde el cierre del ' + (r.desde | date: 'd MMM, h:mm a') : 'desde el inicio' }} · {{ r.cantidadPagos }} pagos{{ r.anulados ? ' · ' + r.anulados + ' anulados' : '' }}</p>
+      <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div class="${TARJETA} p-4"><p class="text-xs font-semibold uppercase text-brasa-muted">Efectivo</p><p class="mt-1 font-heading text-2xl font-bold">{{ r.totalEfectivo | precioCop }}</p></div>
+        <div class="${TARJETA} p-4"><p class="text-xs font-semibold uppercase text-brasa-muted">Datáfono</p><p class="mt-1 font-heading text-2xl font-bold">{{ r.totalDatafono | precioCop }}</p></div>
+        <div class="${TARJETA} p-4"><p class="text-xs font-semibold uppercase text-brasa-muted">En línea</p><p class="mt-1 font-heading text-2xl font-bold">{{ r.totalEnLinea | precioCop }}</p></div>
+        <div class="${TARJETA} p-4"><p class="text-xs font-semibold uppercase text-brasa-muted">Total del turno</p><p class="mt-1 font-heading text-2xl font-bold text-brasa-orange">{{ r.total | precioCop }}</p></div>
+      </div>
+
+      <div class="mt-6 grid gap-6 lg:grid-cols-2">
+        <section class="${TARJETA} p-5">
+          <h2 class="font-heading text-base font-semibold">Quién cobró</h2>
+          <ul class="mt-3 space-y-1.5 text-sm">
+            @for (x of r.porPersona; track x.nombre) {
+              <li class="flex justify-between"><span>{{ x.nombre }}</span><span class="font-semibold">{{ x.total | precioCop }}</span></li>
+            } @empty { <li class="text-brasa-muted">Aún no hay cobros en este turno.</li> }
+          </ul>
+          <h2 class="mt-5 font-heading text-base font-semibold">Cuentas entregadas sin pagar ({{ r.cuentasAbiertas.length }})</h2>
+          <ul class="mt-3 space-y-1.5 text-sm">
+            @for (c of r.cuentasAbiertas; track c.id) {
+              <li class="flex justify-between text-amber-800"><span>{{ c.numero }} · {{ c.mesa ? 'Mesa ' + c.mesa : 'Para llevar' }}</span><span class="font-semibold">{{ c.saldo | precioCop }}</span></li>
+            } @empty { <li class="text-green-700">Todas las cuentas entregadas están pagadas.</li> }
+          </ul>
+        </section>
+
+        <form class="${TARJETA} p-5" (ngSubmit)="cerrar()">
+          <h2 class="font-heading text-base font-semibold">Cerrar la caja</h2>
+          <p class="mt-1 text-sm text-brasa-muted">Cuenta el efectivo que hay en la caja y escríbelo. El sistema compara con lo esperado ({{ r.totalEfectivo | precioCop }}).</p>
+          <label class="mt-4 block text-sm"><span class="mb-1 block font-medium">Efectivo contado</span>
+            <input type="number" min="0" name="contado" class="${CAMPO}" [(ngModel)]="contado" required />
+          </label>
+          @if (contado !== null) {
+            <p class="mt-2 text-sm font-semibold" [class]="contado - r.totalEfectivo === 0 ? 'text-green-700' : 'text-red-700'">
+              Diferencia: {{ contado - r.totalEfectivo | precioCop }} {{ contado - r.totalEfectivo === 0 ? '(cuadra)' : contado - r.totalEfectivo < 0 ? '(falta dinero)' : '(sobra dinero)' }}
+            </p>
+          }
+          <label class="mt-4 block text-sm"><span class="mb-1 block font-medium">Notas (opcional)</span>
+            <input type="text" maxlength="300" name="notas" class="${CAMPO}" [(ngModel)]="notas" placeholder="Ej. faltó cambio en la mañana" />
+          </label>
+          <button class="${BOTON} mt-5 w-full" type="submit" [disabled]="ocupado() || contado === null">Cerrar caja</button>
+        </form>
+      </div>
+    } @else if (cargando()) {
+      <p class="text-sm text-brasa-muted">Cargando caja...</p>
+    }
+
+    <h2 class="mt-8 font-heading text-lg font-semibold">Cierres anteriores</h2>
+    <div class="${TARJETA} mt-3 overflow-x-auto">
+      <table class="w-full min-w-[820px] text-left text-sm">
+        <thead class="border-b border-brasa-border text-xs uppercase text-brasa-muted">
+          <tr><th class="px-4 py-3">Cerrada</th><th class="px-4 py-3">Por</th><th class="px-4 py-3 text-right">Efectivo</th><th class="px-4 py-3 text-right">Datáfono</th><th class="px-4 py-3 text-right">En línea</th><th class="px-4 py-3 text-right">Contado</th><th class="px-4 py-3 text-right">Diferencia</th><th class="px-4 py-3">Notas</th></tr>
+        </thead>
+        <tbody>
+          @for (c of cierres(); track c.id) {
+            <tr class="border-b border-brasa-border last:border-0">
+              <td class="px-4 py-3 whitespace-nowrap">{{ c.hasta | date: 'd MMM, h:mm a' }}</td>
+              <td class="px-4 py-3">{{ c.realizadoPor }}</td>
+              <td class="px-4 py-3 text-right">{{ c.totalEfectivo | precioCop }}</td>
+              <td class="px-4 py-3 text-right">{{ c.totalDatafono | precioCop }}</td>
+              <td class="px-4 py-3 text-right">{{ c.totalEnLinea | precioCop }}</td>
+              <td class="px-4 py-3 text-right">{{ c.efectivoContado | precioCop }}</td>
+              <td class="px-4 py-3 text-right font-semibold" [class]="c.diferencia === 0 ? 'text-green-700' : 'text-red-700'">{{ c.diferencia | precioCop }}</td>
+              <td class="px-4 py-3 text-xs text-brasa-muted">{{ c.notas }}</td>
+            </tr>
+          } @empty {
+            <tr><td colspan="8" class="px-4 py-6 text-center text-brasa-muted">Todavía no hay cierres de caja.</td></tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  `,
+})
+export class AdminCajaComponent extends SeccionAdmin implements OnInit {
+  protected readonly resumen = signal<ResumenCaja | null>(null);
+  protected readonly cierres = signal<CierreCajaAdmin[]>([]);
+  protected contado: number | null = null;
+  protected notas = '';
+
+  ngOnInit(): void {
+    this.recargar();
+  }
+
+  protected recargar(): Promise<void> {
+    return this.cargar(async () => {
+      const [r, c] = await Promise.all([
+        firstValueFrom(this.api.get<ResumenCaja>('/pagos/caja')),
+        firstValueFrom(this.api.get<{ cierres: CierreCajaAdmin[] }>('/pagos/caja/cierres')),
+      ]);
+      this.resumen.set(r);
+      this.cierres.set(c.cierres);
+    });
+  }
+
+  protected async cerrar(): Promise<void> {
+    const r = this.resumen();
+    if (!r || this.contado === null) return;
+    let confirmarPendientes = false;
+    if (r.cuentasAbiertas.length) {
+      // No se cierra la caja sin revisar el saldo pendiente: hay que confirmarlo explícitamente.
+      if (!confirm(`Hay ${r.cuentasAbiertas.length} cuenta(s) entregadas sin pagar. ¿Cerrar la caja de todas formas?`)) return;
+      confirmarPendientes = true;
+    }
+    const cuerpo = { efectivoContado: Number(this.contado), notas: this.notas, confirmarPendientes };
+    if (await this.ejecutar(() => firstValueFrom(this.api.post('/pagos/caja/cierres', cuerpo)), 'Caja cerrada')) {
+      this.contado = null;
+      this.notas = '';
+      this.recargar();
+    }
   }
 }
 

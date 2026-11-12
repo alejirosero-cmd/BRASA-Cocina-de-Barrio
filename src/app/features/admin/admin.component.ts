@@ -25,6 +25,7 @@ export class AdminComponent {
     { ruta: '/admin', titulo: 'Resumen' },
     { ruta: '/admin/pedidos', titulo: 'Pedidos' },
     { ruta: '/admin/pagos', titulo: 'Pagos' },
+    { ruta: '/admin/caja', titulo: 'Caja' },
     { ruta: '/admin/productos', titulo: 'Menú' },
     { ruta: '/admin/mesas', titulo: 'Mesas y QR' },
     { ruta: '/admin/usuarios', titulo: 'Usuarios' },

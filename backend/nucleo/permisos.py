@@ -42,3 +42,17 @@ def Roles(*roles: str):
 
 def es_personal(usuario) -> bool:
     return usuario is not None and usuario.rol in ROLES_PERSONAL
+
+
+def puede_cobrar(usuario) -> bool:
+    """Registrar un cobro en la mesa: el administrador (caja) o un mesero con el permiso activado."""
+    return usuario is not None and (usuario.rol == 'ADMIN' or (usuario.rol == 'MESERO' and usuario.puede_cobrar))
+
+
+def solo_clientes(request, accion: str) -> None:
+    """
+    Acciones que son del cliente (pagar en línea, dejar propina, calificar, pedir factura, llamar al
+    mesero, cancelar su propio pedido). El personal no las hace en nombre del cliente.
+    """
+    if es_personal(usuario_de(request)):
+        raise exceptions.PermissionDenied(f'{accion} lo hace el cliente desde su celular, no el personal del restaurante')

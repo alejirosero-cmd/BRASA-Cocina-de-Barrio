@@ -4,7 +4,7 @@ from rest_framework.response import Response
 
 from nucleo.excepciones import NoEncontrado, SolicitudInvalida
 from nucleo.limites import Limite, LimiteGeneral
-from nucleo.permisos import usuario_de
+from nucleo.permisos import solo_clientes, usuario_de
 from nucleo.serializadores import Estricto, validar
 from nucleo.vistas import VistaPublica, entero, vista_roles
 
@@ -23,9 +23,26 @@ class VerificarPago(Estricto):
     transaccionId = serializers.RegexField(r'^[\w-]{5,64}$')
 
 
-class Efectivo(Estricto):
+class CobroEnMesa(Estricto):
     pedidoId = serializers.CharField(max_length=40)
+    metodo = serializers.ChoiceField(choices=('EFECTIVO', 'TARJETA'), error_messages={'invalid_choice': 'Elige efectivo o tarjeta'})
     monto = serializers.IntegerField(min_value=1, max_value=100_000_000, required=False)
+    # Generada por la pantalla en cada intento: un reintento con la misma clave no duplica el cobro.
+    clave = serializers.RegexField(r'^[A-Za-z0-9-]{16,64}$', error_messages={'invalid': 'Clave de registro no válida'})
+    codigoAutorizacion = serializers.RegexField(r'^[A-Za-z0-9]{4,12}$', required=False,
+                                                error_messages={'invalid': 'El código de aprobación tiene de 4 a 12 letras o números'})
+    efectivoRecibido = serializers.IntegerField(min_value=1, max_value=100_000_000, required=False)
+    confirmarDuplicado = serializers.BooleanField(required=False)
+
+
+class Anulacion(Estricto):
+    motivo = serializers.CharField(min_length=5, max_length=200, error_messages={'min_length': 'Escribe el motivo de la anulación'})
+
+
+class Cierre(Estricto):
+    efectivoContado = serializers.IntegerField(min_value=0, max_value=1_000_000_000)
+    notas = serializers.CharField(max_length=300, required=False, allow_blank=True)
+    confirmarPendientes = serializers.BooleanField(required=False)
 
 
 class Simular(Estricto):
@@ -55,6 +72,7 @@ class PagosVista(VistaPublica):
         return super().get_permissions()
 
     def post(self, request):
+        solo_clientes(request, 'El pago en línea')
         d = validar(IniciarPago, request.data)
         return Response(servicios.iniciar(d['pedidoId'], d.get('monto'), _token(request), usuario_de(request)), status=201)
 
@@ -103,10 +121,32 @@ class DelPedidoVista(VistaPublica):
         return Response(servicios.pagos_del_pedido(pedido_id, _token(request), usuario_de(request)))
 
 
-class EfectivoVista(vista_roles('ADMIN', 'MESERO')):
+class CobroEnMesaVista(vista_roles('ADMIN', 'MESERO')):
+    """Cobro en la mesa: el permiso del mesero (puede cobrar) se vuelve a revisar en el servicio."""
+
     def post(self, request):
-        d = validar(Efectivo, request.data)
-        return Response(servicios.registrar_efectivo(d['pedidoId'], d.get('monto'), request.user), status=201)
+        d = validar(CobroEnMesa, request.data)
+        return Response(servicios.registrar_presencial(d['pedidoId'], d, request.user), status=201)
+
+
+class AnularVista(vista_roles('ADMIN')):
+    def patch(self, request, id):
+        return Response(servicios.anular_presencial(id, validar(Anulacion, request.data)['motivo'], request.user))
+
+
+class CajaVista(vista_roles('ADMIN')):
+    def get(self, request):
+        return Response(servicios.resumen_caja())
+
+
+class CierresVista(vista_roles('ADMIN')):
+    def get(self, request):
+        return Response(servicios.cierres(entero(request.query_params.get('pagina'), 1, 1, 1000)))
+
+    def post(self, request):
+        d = validar(Cierre, request.data)
+        return Response(servicios.cerrar_caja(d['efectivoContado'], (d.get('notas') or '').strip(),
+                                              d.get('confirmarPendientes', False), request.user), status=201)
 
 
 class ReembolsoVista(vista_roles('ADMIN')):

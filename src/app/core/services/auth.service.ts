@@ -10,6 +10,8 @@ export interface Usuario {
   email: string;
   nombre: string;
   rol: Rol;
+  /** Puede registrar cobros en la mesa (el servidor siempre lo vuelve a revisar). */
+  puedeCobrar?: boolean;
 }
 
 interface Sesion {

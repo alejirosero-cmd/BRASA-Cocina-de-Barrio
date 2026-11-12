@@ -38,6 +38,7 @@ export const routes: Routes = [
       { path: '', loadComponent: () => admin().then((m) => m.AdminResumenComponent), title: 'Administración - BRASA' },
       { path: 'pedidos', loadComponent: () => admin().then((m) => m.AdminPedidosComponent), title: 'Pedidos - BRASA' },
       { path: 'pagos', loadComponent: () => admin().then((m) => m.AdminPagosComponent), title: 'Pagos - BRASA' },
+      { path: 'caja', loadComponent: () => admin().then((m) => m.AdminCajaComponent), title: 'Caja - BRASA' },
       { path: 'productos', loadComponent: () => admin().then((m) => m.AdminProductosComponent), title: 'Menú - BRASA' },
       { path: 'mesas', loadComponent: () => admin().then((m) => m.AdminMesasComponent), title: 'Mesas y QR - BRASA' },
       { path: 'usuarios', loadComponent: () => admin().then((m) => m.AdminUsuariosComponent), title: 'Usuarios - BRASA' },

@@ -96,7 +96,8 @@ def cambiar_password(usuario: Usuario, actual: str, nueva: str) -> dict:
 def crear_usuario(datos: dict, actor: Usuario) -> dict:
     if Usuario.objects.filter(email=datos['email']).exists():
         raise Conflicto('Ya existe una cuenta con ese correo')
-    usuario = Usuario(email=datos['email'], nombre=datos['nombre'], rol=datos['rol'])
+    usuario = Usuario(email=datos['email'], nombre=datos['nombre'], rol=datos['rol'],
+                      puede_cobrar=datos['rol'] == 'MESERO' and datos.get('puedeCobrar', False))
     usuario.establecer_password(datos['password'])
     usuario.save()
     registrar('usuario.creado', 'Usuario', usuario.id, actor.id, {'rol': datos['rol']})
@@ -109,12 +110,19 @@ def actualizar_usuario(usuario_id: str, datos: dict, actor: Usuario) -> dict:
         raise exceptions.NotFound('Usuario no encontrado')
     if usuario_id == actor.id and ((datos.get('rol') and datos['rol'] != 'ADMIN') or datos.get('activo') is False):
         raise SolicitudInvalida('No puedes quitarte el rol de administrador ni desactivarte')
-    cambia_acceso = ('rol' in datos and datos['rol'] != usuario.rol) or datos.get('activo') is False
+    cambia_acceso = (('rol' in datos and datos['rol'] != usuario.rol) or datos.get('activo') is False
+                     or ('puedeCobrar' in datos and datos['puedeCobrar'] != usuario.puede_cobrar))
     for campo in ('rol', 'activo', 'nombre'):
         if campo in datos:
             setattr(usuario, campo, datos[campo])
+    if 'puedeCobrar' in datos:
+        usuario.puede_cobrar = datos['puedeCobrar']
+    # El permiso de cobro solo tiene sentido para meseros (el administrador ya puede cobrar).
+    if usuario.rol != 'MESERO':
+        usuario.puede_cobrar = False
     if cambia_acceso:
         usuario.version_sesion += 1
     usuario.save()
-    registrar('usuario.actualizado', 'Usuario', usuario.id, actor.id, {'rol': datos.get('rol'), 'activo': datos.get('activo')})
+    registrar('usuario.actualizado', 'Usuario', usuario.id, actor.id,
+              {'rol': datos.get('rol'), 'activo': datos.get('activo'), 'puedeCobrar': datos.get('puedeCobrar')})
     return {**usuario.publico(), 'activo': usuario.activo}

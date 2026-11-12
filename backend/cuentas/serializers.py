@@ -62,9 +62,11 @@ class ActualizarPerfil(Estricto):
 
 class CrearUsuario(Registro):
     rol = serializers.ChoiceField(choices=ROLES, error_messages={'invalid_choice': 'Rol no válido'})
+    puedeCobrar = serializers.BooleanField(required=False)
 
 
 class ActualizarUsuario(Estricto):
     rol = serializers.ChoiceField(choices=ROLES, required=False, error_messages={'invalid_choice': 'Rol no válido'})
     activo = serializers.BooleanField(required=False)
     nombre = nombre(required=False)
+    puedeCobrar = serializers.BooleanField(required=False)
