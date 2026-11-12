@@ -53,6 +53,9 @@ services:
 
   frontend:
     build: .
+    environment:
+      # Única dirección externa (además de Google Fonts) a la que la página puede conectarse.
+      KEYCLOAK_ORIGEN: http://localhost:${PUERTO_KEYCLOAK:-8089}
     ports:
       - "${PUERTO_WEB:-8088}:80"
     depends_on:

@@ -12,6 +12,8 @@ RUN npx ng build --configuration production
 
 # --- Etapa 2: servidor web ---
 FROM nginx:1.29-alpine
-COPY nginx/nginx.conf /etc/nginx/conf.d/default.conf
+# Plantilla: al arrancar, Nginx reemplaza ${KEYCLOAK_ORIGEN} (dirección de Keycloak permitida por la CSP).
+ENV KEYCLOAK_ORIGEN=http://localhost:8089
+COPY nginx/nginx.conf /etc/nginx/templates/default.conf.template
 COPY --from=compilacion /app/dist/brasa-cocina-de-barrio/browser /usr/share/nginx/html
 EXPOSE 80
